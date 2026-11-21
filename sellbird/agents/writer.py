@@ -707,6 +707,12 @@ Requirements:
 {merge_rule}{style}
 {footer_rule(self.config, rules)}
 {strict}
+- STRICT PROHIBITED PHRASES (instant rejection if used):
+  * NEVER use: "would you be open to", "just checking in", "i know you are busy", "hope you're well", "touch base", "circle back", "quick question", "worth a quick", "game-changer", "seamless".
+  * NEVER use dashes (em-dash —, en-dash –, or spaced hyphen - ). Use commas or periods only.
+  * NEVER use exclamation marks (!).
+  * In Step 1, end with a clean CTA: "Worth a brief chat to see how we did it?", "Open to discussing this on a 10-minute call next week?", or "Does this align with your current priorities?".
+  * Step 1 must be under 55 words. Step 2 under 40 words. Step 3 under 25 words.
 
 Return ONLY a JSON array (no markdown fences, no commentary):
 [

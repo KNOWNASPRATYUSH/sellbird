@@ -138,53 +138,50 @@ class Brain:
         if self.transport is None:
             if groq_key:
                 import httpx
+                models_pool = ["qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
                 async def _groq_api(prompt, *, agent="", task="", timeout=120.0, expect_json=False):
-                    model = self.model or "openai/gpt-oss-20b"
-                    max_attempts = 5
-                    for attempt in range(max_attempts):
-                        try:
-                            async with httpx.AsyncClient(timeout=timeout) as client:
-                                resp = await client.post(
-                                    "https://api.groq.com/openai/v1/chat/completions",
-                                    headers={
-                                        "Authorization": f"Bearer {groq_key}",
-                                        "content-type": "application/json",
-                                    },
-                                    json={
-                                        "model": model,
-                                        "messages": [{"role": "user", "content": prompt}],
-                                        "temperature": 0.7,
-                                    },
-                                )
-                                if resp.status_code == 429:
-                                    err_text = resp.text
-                                    wait_s = 25.0
-                                    match = re.search(r"try again in ([0-9.]+)s", err_text)
-                                    if match:
-                                        wait_s = float(match.group(1)) + 2.0
-                                    elif "retry-after" in resp.headers:
-                                        try:
-                                            wait_s = float(resp.headers["retry-after"]) + 1.0
-                                        except Exception:
-                                            pass
-                                    logger.warning(
-                                        f"Groq TPM limit reached (attempt {attempt+1}/{max_attempts}). "
-                                        f"Pausing {wait_s:.1f}s for free quota refill..."
+                    preferred_model = self.model or models_pool[0]
+                    ordered_models = [preferred_model] + [m for m in models_pool if m != preferred_model]
+                    
+                    for current_model in ordered_models:
+                        for attempt in range(3):
+                            try:
+                                # Groq free tier enforces OTPM (output tokens per min) limit of 1000
+                                max_out = 850
+                                payload = {
+                                    "model": current_model,
+                                    "messages": [{"role": "user", "content": prompt}],
+                                    "temperature": 0.7,
+                                    "max_tokens": max_out,
+                                }
+                                async with httpx.AsyncClient(timeout=timeout) as client:
+                                    resp = await client.post(
+                                        "https://api.groq.com/openai/v1/chat/completions",
+                                        headers={
+                                            "Authorization": f"Bearer {groq_key}",
+                                            "content-type": "application/json",
+                                        },
+                                        json=payload,
                                     )
-                                    await asyncio.sleep(min(wait_s, 60.0))
-                                    continue
+                                    if resp.status_code == 429:
+                                        logger.warning(
+                                            f"Groq rate limit on {current_model} (attempt {attempt+1}/3). "
+                                            "Waiting 12s for quota refill..."
+                                        )
+                                        await asyncio.sleep(12.0)
+                                        continue
 
-                                if resp.status_code != 200:
-                                    logger.error(f"Groq API error {resp.status_code}: {resp.text[:300]}")
-                                    return ""
-                                data = resp.json()
-                                return data["choices"][0]["message"]["content"]
-                        except Exception as e:
-                            logger.warning(f"Groq API transport error ({e}) on attempt {attempt+1}")
-                            if attempt < max_attempts - 1:
-                                await asyncio.sleep(5)
-                                continue
-                            return ""
+                                    if resp.status_code != 200:
+                                        logger.error(f"Groq API error {resp.status_code}: {resp.text[:300]}")
+                                        break
+                                    data = resp.json()
+                                    content = data["choices"][0]["message"].get("content") or ""
+                                    if not content and "reasoning" in data["choices"][0]["message"]:
+                                        content = data["choices"][0]["message"]["reasoning"]
+                                    return content
+                            except Exception as e:
+                                logger.warning(f"Groq API transport error ({e}) on {current_model}")
+                                await asyncio.sleep(3)
                     return ""
                 self.transport = _groq_api
                 logger.info("Brain: Using direct Groq API key (100% free, CLI bypassed).")
