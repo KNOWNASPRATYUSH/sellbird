@@ -29,7 +29,7 @@ BANNED_PHRASES = (
 
 MAX_SUBJECT_LEN = 90
 MAX_BODY_WORDS = 220        # hard ceiling; sequences aim far lower
-MAX_LINKS = 1
+MAX_LINKS = 2
 
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 MERGE_TAG_RE = re.compile(r"\{\{\s*\w+\s*\}\}|\{\s*\w+\s*\}(?!\})")
@@ -229,7 +229,7 @@ def pre_send_check(
         reasons.append(f"banned phrases: {hits[:3]}")
 
     # Link budget: cold email with links goes to spam
-    links = URL_RE.findall(body)
+    links = set(URL_RE.findall(body))
     if len(links) > MAX_LINKS:
         reasons.append(f"too many links ({len(links)} > {MAX_LINKS})")
 

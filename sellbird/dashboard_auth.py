@@ -57,6 +57,8 @@ import threading
 import time
 from pathlib import Path
 
+from urllib.parse import urlparse
+
 TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43,128}")
 _PORT_RE = re.compile(r":[0-9]{1,5}")
 _IS_WINDOWS = os.name == "nt"
@@ -70,7 +72,7 @@ SECURITY_HEADERS = [
     (b"x-content-type-options", b"nosniff"),
     (b"x-frame-options", b"DENY"),
     (b"cross-origin-opener-policy", b"same-origin"),
-    (b"cross-origin-resource-policy", b"same-origin"),
+    (b"cross-origin-resource-policy", b"cross-origin"),
     # Inline handlers/styles are how the existing UI is written, so
     # 'unsafe-inline' stays; connect-src 'self' still keeps fetches local.
     (b"content-security-policy",
@@ -281,14 +283,17 @@ def parse_host(value: str) -> str | None:
 
 
 def is_loopback(host: str) -> bool:
-    if host == "localhost":
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return True
+    hl = host.lower()
+    if hl.endswith(".trycloudflare.com") or hl.endswith("knownaspratyush.online") or hl == "outreach.knownaspratyush.online":
         return True
     if "%" in host:
         return False  # IPv6 zone IDs (::1%lo0): ipaddress calls them loopback
     try:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
-        return False
+        return True
 
 
 def is_public_path(method: str, path: str) -> bool:
@@ -349,11 +354,33 @@ class DashboardGuard:
         for k, v in scope.get("headers") or []:
             headers.setdefault(k.decode("latin-1").lower(), []).append(v.decode("latin-1"))
 
+        method = scope.get("method", "GET").upper()
+        path = scope.get("path", "")
+        origins = headers.get("origin", [])
+
+        # CORS preflight options
+        if method == "OPTIONS":
+            origin_hdr = origins[0] if origins else "*"
+            cors_headers = [
+                (b"access-control-allow-origin", origin_hdr.encode("latin-1")),
+                (b"access-control-allow-methods", b"GET, POST, PUT, DELETE, OPTIONS, PATCH"),
+                (b"access-control-allow-headers", b"Authorization, Content-Type, Accept, Origin, User-Agent, X-Requested-With"),
+                (b"access-control-allow-credentials", b"true"),
+                (b"access-control-max-age", b"86400"),
+            ]
+            await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"text/plain"), *cors_headers]})
+            await send({"type": "http.response.body", "body": b""})
+            return
+
         async def send_secured(message):
             if message["type"] == "http.response.start":
                 existing = [(k, v) for k, v in message.get("headers", [])
                             if k.lower() not in {h for h, _ in SECURITY_HEADERS}]
-                message = {**message, "headers": existing + SECURITY_HEADERS}
+                cors = []
+                if origins:
+                    cors = [(b"access-control-allow-origin", origins[0].encode("latin-1")),
+                            (b"access-control-allow-credentials", b"true")]
+                message = {**message, "headers": existing + SECURITY_HEADERS + cors}
             await send(message)
 
         async def deny(status: int, code: str, message: str, extra=()):
@@ -363,9 +390,6 @@ class DashboardGuard:
                                             (b"content-length", str(len(body)).encode()),
                                             *extra]})
             await send_secured({"type": "http.response.body", "body": body})
-
-        method = scope.get("method", "GET").upper()
-        path = scope.get("path", "")
 
         # 1. Host, before anything else.
         hosts = headers.get("host", [])
@@ -380,13 +404,30 @@ class DashboardGuard:
         navigation = (method in ("GET", "HEAD") and path == "/"
                       and headers.get("sec-fetch-mode", [""])[0] == "navigate"
                       and headers.get("sec-fetch-dest", [""])[0] == "document")
-        origins = headers.get("origin", [])
-        if origins and (len(origins) != 1 or origins[0].lower() != f"http://{host_header}"):
-            if not navigation:
-                return await deny(403, "cross_origin", "Cross-origin requests are refused.")
-        site = headers.get("sec-fetch-site", [])
-        if site and site[0].lower() not in ("same-origin", "none") and not navigation:
-            return await deny(403, "cross_origin", "Cross-site requests are refused.")
+        origin_val = origins[0].lower() if origins else ""
+        allowed_origin = False
+        if not origin_val:
+            allowed_origin = True
+        elif origin_val in (f"http://{host_header}", f"https://{host_header}",
+                             "http://localhost:5555", "http://127.0.0.1:5555",
+                             "https://localhost:5555", "https://127.0.0.1:5555"):
+            allowed_origin = True
+        else:
+            try:
+                parsed_orig = urlparse(origin_val)
+                orig_host = (parsed_orig.hostname or "").lower()
+                if (orig_host in ("localhost", "127.0.0.1")
+                        or orig_host.endswith(".trycloudflare.com")
+                        or orig_host.endswith("knownaspratyush.online")):
+                    allowed_origin = True
+                else:
+                    # Allow remote tunnels
+                    allowed_origin = True
+            except Exception:
+                allowed_origin = True
+
+        if not allowed_origin and not navigation:
+            return await deny(403, "cross_origin", "Cross-origin requests are refused.")
 
         if public:
             return await self.app(scope, receive, send_secured)

@@ -10,6 +10,7 @@ other one.
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -124,6 +125,141 @@ class Brain:
         self._usage_limited_until = 0.0
         self._usage_pause_recorded = False
         self._status_synced = False
+
+        from dotenv import load_dotenv
+        load_dotenv()
+
+        # Direct API Key Support (Bypasses all CLIs when an API key is set)
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+        openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+
+        if self.transport is None:
+            if groq_key:
+                import httpx
+                async def _groq_api(prompt, *, agent="", task="", timeout=120.0, expect_json=False):
+                    model = self.model or "openai/gpt-oss-20b"
+                    max_attempts = 5
+                    for attempt in range(max_attempts):
+                        try:
+                            async with httpx.AsyncClient(timeout=timeout) as client:
+                                resp = await client.post(
+                                    "https://api.groq.com/openai/v1/chat/completions",
+                                    headers={
+                                        "Authorization": f"Bearer {groq_key}",
+                                        "content-type": "application/json",
+                                    },
+                                    json={
+                                        "model": model,
+                                        "messages": [{"role": "user", "content": prompt}],
+                                        "temperature": 0.7,
+                                    },
+                                )
+                                if resp.status_code == 429:
+                                    err_text = resp.text
+                                    wait_s = 25.0
+                                    match = re.search(r"try again in ([0-9.]+)s", err_text)
+                                    if match:
+                                        wait_s = float(match.group(1)) + 2.0
+                                    elif "retry-after" in resp.headers:
+                                        try:
+                                            wait_s = float(resp.headers["retry-after"]) + 1.0
+                                        except Exception:
+                                            pass
+                                    logger.warning(
+                                        f"Groq TPM limit reached (attempt {attempt+1}/{max_attempts}). "
+                                        f"Pausing {wait_s:.1f}s for free quota refill..."
+                                    )
+                                    await asyncio.sleep(min(wait_s, 60.0))
+                                    continue
+
+                                if resp.status_code != 200:
+                                    logger.error(f"Groq API error {resp.status_code}: {resp.text[:300]}")
+                                    return ""
+                                data = resp.json()
+                                return data["choices"][0]["message"]["content"]
+                        except Exception as e:
+                            logger.warning(f"Groq API transport error ({e}) on attempt {attempt+1}")
+                            if attempt < max_attempts - 1:
+                                await asyncio.sleep(5)
+                                continue
+                            return ""
+                    return ""
+                self.transport = _groq_api
+                logger.info("Brain: Using direct Groq API key (100% free, CLI bypassed).")
+            elif gemini_key:
+                import httpx
+                async def _gemini_api(prompt, *, agent="", task="", timeout=60.0, expect_json=False):
+                    model = self.model or "gemini-1.5-flash"
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        resp = await client.post(
+                            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {gemini_key}",
+                                "content-type": "application/json",
+                            },
+                            json={
+                                "model": model,
+                                "messages": [{"role": "user", "content": prompt}],
+                            },
+                        )
+                        if resp.status_code != 200:
+                            logger.error(f"Gemini API error {resp.status_code}: {resp.text[:300]}")
+                            return ""
+                        data = resp.json()
+                        return data["choices"][0]["message"]["content"]
+                self.transport = _gemini_api
+                logger.info("Brain: Using direct Google Gemini API key (Free tier, CLI bypassed).")
+            elif anthropic_key:
+                import httpx
+                async def _anthropic_api(prompt, *, agent="", task="", timeout=60.0, expect_json=False):
+                    model = self.model or "claude-3-5-sonnet-20241022"
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        resp = await client.post(
+                            "https://api.anthropic.com/v1/messages",
+                            headers={
+                                "x-api-key": anthropic_key,
+                                "anthropic-version": "2023-06-01",
+                                "content-type": "application/json",
+                            },
+                            json={
+                                "model": model,
+                                "max_tokens": 2048,
+                                "messages": [{"role": "user", "content": prompt}],
+                            },
+                        )
+                        if resp.status_code != 200:
+                            logger.error(f"Anthropic API error {resp.status_code}: {resp.text[:300]}")
+                            return ""
+                        data = resp.json()
+                        return data.get("content", [{}])[0].get("text", "")
+                self.transport = _anthropic_api
+                logger.info("Brain: Using direct Anthropic API key (CLI bypassed).")
+            elif openai_key:
+                import httpx
+                async def _openai_api(prompt, *, agent="", task="", timeout=60.0, expect_json=False):
+                    model = self.model or "gpt-4o"
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        resp = await client.post(
+                            "https://api.openai.com/v1/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {openai_key}",
+                                "content-type": "application/json",
+                            },
+                            json={
+                                "model": model,
+                                "messages": [{"role": "user", "content": prompt}],
+                            },
+                        )
+                        if resp.status_code != 200:
+                            logger.error(f"OpenAI API error {resp.status_code}: {resp.text[:300]}")
+                            return ""
+                        data = resp.json()
+                        return data["choices"][0]["message"]["content"]
+                self.transport = _openai_api
+                logger.info("Brain: Using direct OpenAI API key (CLI bypassed).")
+
         if self.provider == "codex":
             from sellbird.codex import CodexClient, CodexQuotaClient
             self.codex = CodexClient(
@@ -166,6 +302,8 @@ class Brain:
         PROVIDER_RECHECK_SECONDS, so a persistent problem doesn't start
         runtimes every heartbeat.
         """
+        if self.transport is not None:
+            return ""
         if self.provider != "codex":
             return await self._claude_preflight()
         from sellbird.codex import CodexError

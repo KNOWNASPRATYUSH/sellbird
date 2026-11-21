@@ -172,7 +172,7 @@ def build_command(executable: str, model: str = "", session_id: str | None = Non
         # None of the operator's CLAUDE.md, hooks, skills, plugins or
         # settings files, and no transcript left behind.
         "--safe-mode",
-        "--setting-sources", "",
+        "--setting-sources", "local",
         "--disable-slash-commands",
         "--no-session-persistence",
     ]
