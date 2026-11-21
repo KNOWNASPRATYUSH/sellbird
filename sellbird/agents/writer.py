@@ -525,10 +525,11 @@ class Writer:
                 f"- Name: unknown (the company's general inbox, {prospect.email})",
                 f"- Company: {prospect.company}",
             ]
+            cname = prospect.company or "there"
             inbox_rule = (
-                "\n- This goes to the company's general inbox, most likely read by the owner"
-                "\n  or the office manager. Use no first name; open with 'Hi there' or"
-                "\n  address the company's team.")
+                f"\n- This goes to the company's inbox ({prospect.email})."
+                f"\n  NEVER open with 'Hi there'. Always greet professionally using their company name: 'Hi {cname} team,'."
+            )
         else:
             facts = [
                 f"- Name: {prospect.full_name()}",
@@ -634,9 +635,10 @@ Return ONLY JSON: {{"subject": "...", "body": "..."}}"""
         inbox_batch = all(p.is_company_inbox for p in prospects)
         if inbox_batch:
             merge_rule = (
-                "- These go to each company's general inbox, so no names are known.\n"
+                "- These go to each company's general inbox, so no person first names are known.\n"
                 "  Use {{company}} as the merge variable in every email and NEVER\n"
-                "  {{first_name}} or {{title}}. Greet with 'Hi there' or the company's team."
+                "  {{first_name}} or {{title}}. NEVER open with 'Hi there'.\n"
+                "  Always greet professionally with 'Hi {{company}} team,'."
             )
         else:
             merge_rule = (
