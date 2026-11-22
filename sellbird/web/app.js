@@ -2084,7 +2084,6 @@ async function sendingToggle(action) {
 
 const COMPANIES_PER_PAGE = 50;
 let _companiesPage = 0;
-let _companies = [];
 let _filteredCompanies = [];
 let _companyQuery = '';
 let _companyFilterWebsite = 'all';
