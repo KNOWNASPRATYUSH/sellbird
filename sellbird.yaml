@@ -59,10 +59,12 @@ icp:
   - Head of Operations
   - General Manager
   geography:
+  - New York
+  - San Francisco
+  - London
+  - Austin
+  - Mumbai
   - United States
-  - United Kingdom
-  - India
-  - Global
   hiring_signals:
   - Full Stack Developer
   - Web Developer
