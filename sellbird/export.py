@@ -33,19 +33,41 @@ async def collect_prospects(
     statuses: list[str] | None = None,
     include_all: bool = False,
     config=None,
+    email_type: str = "",
+    q: str = "",
+    unexported_only: bool = False,
 ) -> list[dict]:
     """Fetch prospects matching the filters as export-ready dicts.
 
     Default view is the *deliverable* list (verified + risky emails).
     Outreach exports exclude opted-out prospects even with explicit filters.
     ``include_all`` disables every filter for a full dump.
+    ``unexported_only`` filters out prospects that have already been exported.
     """
     import aiosqlite
 
     from sellbird import storage
+    from sellbird.state import FREE_MAIL_DOMAINS
 
     where = []
     params: list = []
+    if unexported_only:
+        where.append("exported_at IS NULL")
+
+    if email_type == "gmail":
+        where.append("(LOWER(email) LIKE '%@gmail.com' OR LOWER(email) LIKE '%@googlemail.com')")
+    elif email_type == "free":
+        free_likes = " OR ".join(f"LOWER(email) LIKE '%@{d}'" for d in sorted(FREE_MAIL_DOMAINS))
+        where.append(f"({free_likes})")
+    elif email_type == "custom":
+        not_free = " AND ".join(f"LOWER(email) NOT LIKE '%@{d}'" for d in sorted(FREE_MAIL_DOMAINS))
+        where.append(f"email != '' AND ({not_free})")
+
+    if q and q.strip():
+        term = f"%{q.strip().lower()}%"
+        where.append("(LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ? OR LOWER(company) LIKE ? OR LOWER(email) LIKE ? OR LOWER(title) LIKE ?)")
+        params.extend([term, term, term, term, term])
+
     if not include_all:
         # Opt-outs must not be reintroduced by an outreach filter. IS NOT also
         # preserves legacy NULL statuses; only known opt-outs are suppressed.
@@ -83,6 +105,7 @@ async def collect_prospects(
     out = []
     for r in rows:
         out.append({
+            "id": r.get("id", ""),
             "email": r.get("email", ""),
             "first_name": r.get("first_name", ""),
             "last_name": r.get("last_name", ""),
@@ -135,6 +158,10 @@ async def export_prospects_csv(
     statuses: list[str] | None = None,
     include_all: bool = False,
     config=None,
+    email_type: str = "",
+    q: str = "",
+    unexported_only: bool = False,
+    mark_exported: bool = False,
 ) -> tuple[int, str]:
     """Export prospects to CSV. Returns (row_count, csv_text).
 
@@ -147,7 +174,14 @@ async def export_prospects_csv(
         statuses=statuses,
         include_all=include_all,
         config=config,
+        email_type=email_type,
+        q=q,
+        unexported_only=unexported_only,
     )
+    if mark_exported and rows:
+        pids = [r["id"] for r in rows if r.get("id")]
+        if pids:
+            await state.mark_prospects_exported(pids)
     text = to_csv(rows)
     if out_path:
         with open(out_path, "w", newline="", encoding="utf-8") as f:

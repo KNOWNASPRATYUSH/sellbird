@@ -558,6 +558,13 @@ MIGRATIONS: list[str] = [
     ALTER TABLE conversations ADD COLUMN mailbox_id TEXT DEFAULT '';
     CREATE INDEX IF NOT EXISTS idx_outbox_mailbox_sent ON outbox(mailbox_id, status, sent_at);
     """,
+    # ── v17: export tracking ──
+    """
+    ALTER TABLE companies ADD COLUMN exported_at TIMESTAMP DEFAULT NULL;
+    ALTER TABLE prospects ADD COLUMN exported_at TIMESTAMP DEFAULT NULL;
+    CREATE INDEX IF NOT EXISTS idx_companies_exported ON companies(exported_at);
+    CREATE INDEX IF NOT EXISTS idx_prospects_exported ON prospects(exported_at);
+    """,
 ]
 
 BRAIN_PROVIDERS = ("claude", "codex")
@@ -852,6 +859,35 @@ class StateManager:
                             prospect.id = row[0]
                             break
         return prospect.id
+
+    async def mark_prospects_exported(self, prospect_ids: list[str]):
+        """Stamp exported_at on prospects and their companies so they aren't exported again."""
+        if not prospect_ids:
+            return
+        placeholders = ",".join("?" for _ in prospect_ids)
+        async with self._connect() as db:
+            await db.execute(
+                f"UPDATE prospects SET exported_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+                prospect_ids,
+            )
+            await db.execute(
+                f"UPDATE companies SET exported_at = CURRENT_TIMESTAMP WHERE id IN ("
+                f"SELECT DISTINCT company_id FROM prospects WHERE id IN ({placeholders}))",
+                prospect_ids,
+            )
+            await db.commit()
+
+    async def mark_companies_exported(self, company_ids: list[str]):
+        """Stamp exported_at on companies so they aren't exported again."""
+        if not company_ids:
+            return
+        placeholders = ",".join("?" for _ in company_ids)
+        async with self._connect() as db:
+            await db.execute(
+                f"UPDATE companies SET exported_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+                company_ids,
+            )
+            await db.commit()
 
     async def get_prospect(self, prospect_id: str) -> Prospect | None:
         async with self._connect() as db:

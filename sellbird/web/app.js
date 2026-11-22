@@ -366,6 +366,51 @@ async function downloadCsv(path, filename, btn) {
   }
 }
 
+async function exportCompanyRegister(btn) {
+  const unexported = document.getElementById('company-export-unexported') ? document.getElementById('company-export-unexported').checked : true;
+  const website = _companyFilterWebsite || 'all';
+  const emailType = _companyFilterEmail || 'all';
+  const q = _companyQuery || '';
+
+  const path = '/api/export/companies.csv?website=' + encodeURIComponent(website) +
+    '&email_type=' + encodeURIComponent(emailType) +
+    '&q=' + encodeURIComponent(q) +
+    '&unexported_only=' + (unexported ? 'true' : 'false') +
+    '&mark_exported=true';
+
+  let nameParts = ['companies'];
+  if (website === 'no_website') nameParts.push('no-website');
+  if (emailType === 'gmail') nameParts.push('gmail');
+  if (emailType === 'free') nameParts.push('free-email');
+  const filename = nameParts.join('-') + '.csv';
+
+  await downloadCsv(path, filename, btn);
+  showToast(unexported ? 'Exported & marked so these companies won’t export again.' : 'Export complete.', 'success');
+  loadCompanies();
+}
+
+async function exportContacts(all, btn) {
+  const unexported = document.getElementById('prospect-export-unexported') ? document.getElementById('prospect-export-unexported').checked : true;
+  const emailType = _contactEmailFilter || 'all';
+  const q = _contactQuery || '';
+
+  const path = '/api/export/prospects.csv?all=' + (all ? 'true' : 'false') +
+    '&email_type=' + encodeURIComponent(emailType) +
+    '&q=' + encodeURIComponent(q) +
+    '&unexported_only=' + (unexported ? 'true' : 'false') +
+    '&mark_exported=true';
+
+  let nameParts = ['prospects'];
+  if (all) nameParts.push('all');
+  if (emailType === 'gmail') nameParts.push('gmail');
+  if (emailType === 'free') nameParts.push('free-email');
+  const filename = nameParts.join('-') + '.csv';
+
+  await downloadCsv(path, filename, btn);
+  showToast(unexported ? 'Exported & marked so these contacts won’t export again.' : 'Export complete.', 'success');
+  loadProspects();
+}
+
 function showToast(msg, type) {
   const t = document.createElement('div');
   t.className = 'toast ' + type;

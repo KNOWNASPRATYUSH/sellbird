@@ -783,19 +783,67 @@ async def get_companies():
 
 
 @app.get("/api/export/companies.csv")
-async def export_companies():
-    """The company register: every company, why it fits, why it wasn't contacted."""
+async def export_companies(
+    website: str = "all",
+    email_type: str = "all",
+    q: str = "",
+    unexported_only: bool = True,
+    mark_exported: bool = True,
+):
+    """The company register: companies filtered by website/email/search and export history."""
     from sellbird.config import load_config
     from sellbird.register import build_register, to_csv
+    from sellbird.state import FREE_MAIL_DOMAINS
+    state = _state()
     try:
-        text = to_csv(await build_register(query_db, load_config()))
+        await state.init_db()
+        rows = await build_register(query_db, load_config())
+
+        # If unexported_only is true, filter out already-exported companies
+        if unexported_only:
+            try:
+                exported_ids = {r["id"] for r in await query_db("SELECT id FROM companies WHERE exported_at IS NOT NULL")}
+                rows = [r for r in rows if r["id"] not in exported_ids]
+            except Exception:
+                pass
+
+        # Filter by website
+        if website == "no_website":
+            rows = [r for r in rows if not (r.get("website") or "").strip()]
+        elif website == "has_website":
+            rows = [r for r in rows if bool((r.get("website") or "").strip())]
+
+        # Filter by email
+        if email_type == "gmail":
+            rows = [r for r in rows if "@gmail.com" in (r.get("contacts") or "").lower() or "@googlemail.com" in (r.get("contacts") or "").lower()]
+        elif email_type == "free":
+            rows = [r for r in rows if any(f"@{dom}" in (r.get("contacts") or "").lower() for dom in FREE_MAIL_DOMAINS)]
+        elif email_type == "custom":
+            rows = [r for r in rows if r.get("contacts") and not any(f"@{dom}" in (r.get("contacts") or "").lower() for dom in FREE_MAIL_DOMAINS)]
+
+        # Filter by text search query
+        if q and q.strip():
+            term = q.strip().lower()
+            rows = [r for r in rows if term in " ".join([r.get("company", ""), r.get("website", ""), r.get("sector", ""), r.get("area", ""), r.get("contacts", "")]).lower()]
+
+        if mark_exported and rows:
+            cids = [r["id"] for r in rows if r.get("id")]
+            if cids:
+                try:
+                    await state.mark_companies_exported(cids)
+                except Exception as ex:
+                    logger.warning("Failed to mark companies exported: %s", ex)
+
+        text = to_csv(rows)
     except Exception as e:
         logger.warning("Company register export failed: %s", e)
         return PlainTextResponse(f"Company register export failed: {e}", status_code=500)
+
+    filename = f"companies{'-gmail' if email_type == 'gmail' else ''}{'-no-website' if website == 'no_website' else ''}.csv"
     return PlainTextResponse(
-        "﻿" + text,
+        "\ufeff" + text,
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="company-register.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -1715,8 +1763,16 @@ async def sending_toggle(action: str):
 
 
 @app.get("/api/export/prospects.csv")
-async def export_prospects(all: bool = False, min_score: int = 0, email_status: str = ""):
-    """Sequencer-ready CSV download of the prospect list."""
+async def export_prospects(
+    all: bool = False,
+    min_score: int = 0,
+    email_status: str = "",
+    email_type: str = "all",
+    q: str = "",
+    unexported_only: bool = True,
+    mark_exported: bool = True,
+):
+    """Sequencer-ready CSV download of the prospect list matching filters."""
     from sellbird.state import StateManager
     from sellbird.export import export_prospects_csv
 
@@ -1724,16 +1780,25 @@ async def export_prospects(all: bool = False, min_score: int = 0, email_status: 
     try:
         await state.init_db()
         statuses = [s.strip() for s in email_status.split(",") if s.strip()] or None
-        _, text = await export_prospects_csv(
-            state, email_statuses=statuses, min_score=min_score, include_all=all,
+        count, text = await export_prospects_csv(
+            state,
+            email_statuses=statuses,
+            min_score=min_score,
+            include_all=all,
+            email_type=email_type,
+            q=q,
+            unexported_only=unexported_only,
+            mark_exported=mark_exported,
         )
     except Exception as e:
         logger.warning("Prospect export failed: %s", e)
         text = ""
+
+    filename = f"prospects{'-all' if all else ''}{'-gmail' if email_type == 'gmail' else ''}.csv"
     return PlainTextResponse(
         text,
         media_type="text/csv",
-        headers={"Content-Disposition": 'attachment; filename="prospects.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
