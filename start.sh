@@ -23,7 +23,10 @@ fi
 
 if [ "$NEED_RESTORE" -eq 1 ]; then
     echo "Restoring database from encrypted seed vault..."
-    python -m sellbird.seed_vault restore /app/data/sellbird.db /app/seed.enc || true
+    SEED_FILE="/app/seed.enc"
+    [ ! -f "$SEED_FILE" ] && SEED_FILE="/app/sellbird/seed.enc"
+    [ ! -f "$SEED_FILE" ] && SEED_FILE="seed.enc"
+    python -m sellbird.seed_vault restore /app/data/sellbird.db "$SEED_FILE"
 fi
 
 # Background auto-backup loop (syncs to private Gist every 30m if GITHUB_BACKUP_TOKEN is set)

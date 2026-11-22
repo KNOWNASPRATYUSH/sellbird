@@ -5,6 +5,7 @@
 !start.sh
 !requirements.txt
 !sellbird.yaml
+!seed.enc
 !sellbird/
 !sellbird/**
 !prompts/
