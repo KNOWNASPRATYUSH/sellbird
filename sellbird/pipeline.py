@@ -133,4 +133,12 @@ async def run_prospecting(
         logger.exception("profile stage failed")
         report.errors.append(f"profile: {e}")
 
+    try:
+        token = os.getenv("GITHUB_BACKUP_TOKEN", "").strip()
+        if token and getattr(state, "db_path", None):
+            from sellbird.seed_vault import push_gist_backup
+            asyncio.create_task(asyncio.to_thread(push_gist_backup, state.db_path, token))
+    except Exception:
+        pass
+
     return report

@@ -6,9 +6,25 @@ mkdir -p /app/data
 
 # Sync /app/.env from container environment variables without losing existing keys
 touch /app/.env
-env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|SELLBIRD_|PORT)' >> /app/.env || true
+env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|SELLBIRD_|GITHUB_|PORT)' >> /app/.env || true
 # Deduplicate entries in .env, letting newer non-empty container env entries take precedence
 awk -F= '!seen[$1]++' /app/.env > /app/.env.tmp && mv /app/.env.tmp /app/.env
+
+# Auto-restore database on boot from encrypted seed or remote cloud backup
+if [ ! -s /app/data/sellbird.db ]; then
+    echo "Restoring database from encrypted seed vault..."
+    python -m sellbird.seed_vault restore /app/data/sellbird.db /app/seed.enc || true
+fi
+
+# Background auto-backup loop (syncs to private Gist every 30m if GITHUB_BACKUP_TOKEN is set)
+(
+    while true; do
+        sleep 1800
+        if [ -n "$GITHUB_BACKUP_TOKEN" ] && [ -s /app/data/sellbird.db ]; then
+            python -m sellbird.seed_vault backup /app/data/sellbird.db >/dev/null 2>&1 || true
+        fi
+    done
+) &
 
 # Clear any stale lockfiles from previous restarts
 rm -f /app/data/sellbird.pid /app/data/sellbird.lock
