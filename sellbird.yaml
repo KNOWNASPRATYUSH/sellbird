@@ -96,8 +96,8 @@ usage:
   max_daily_claude_percent: 80
   heartbeat_interval_minutes: 5
   quiet_hours:
-    start: '04:00'
-    end: '04:01'
+    start: '00:00'
+    end: '00:00'
     timezone: Asia/Kolkata
 writer:
   email_rules: skills/email_rules.md

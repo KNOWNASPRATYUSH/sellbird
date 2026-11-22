@@ -6,7 +6,7 @@ mkdir -p /app/data
 
 # Sync /app/.env from container environment variables without losing existing keys
 touch /app/.env
-env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|SELLBIRD_|GITHUB_|PORT)' >> /app/.env || true
+env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|SELLBIRD_|GITHUB_|NOTIFICATION_|ALERT_|PORT)' >> /app/.env || true
 # Deduplicate entries in .env, letting newer non-empty container env entries take precedence
 awk -F= '!seen[$1]++' /app/.env > /app/.env.tmp && mv /app/.env.tmp /app/.env
 
@@ -48,6 +48,9 @@ echo "============================================================"
 
 # Auto-confirm signals so discovery and prospecting start immediately without manual UI gate
 python -m sellbird signals --confirm all || true
+
+# Auto-approve pending review outbox items so autopilot sends autonomously
+python -c "import asyncio; from sellbird.state import StateManager; asyncio.run(StateManager().approve_outbox())" 2>/dev/null || true
 
 # Launch autonomous background worker loop
 python -m sellbird run &

@@ -874,6 +874,8 @@ class EnvConfig(BaseModel):
     # Microsoft 365 (channels.email.provider: microsoft)
     m365_client_id: str = ""
     m365_tenant_id: str = ""
+    # Lead notifications (alerts when prospects are ready for a call)
+    notification_email: str = ""
     # Optional: only used when compliance.precleared.enabled is true.
     precleared_api_key: str = ""
 
@@ -1019,6 +1021,7 @@ def load_env() -> EnvConfig:
         imap_password=os.getenv("IMAP_PASSWORD", "").strip(),
         m365_client_id=os.getenv("M365_CLIENT_ID", "").strip(),
         m365_tenant_id=os.getenv("M365_TENANT_ID", "").strip(),
+        notification_email=(os.getenv("NOTIFICATION_EMAIL") or os.getenv("ALERT_EMAIL") or "").strip(),
         precleared_api_key=os.getenv("PRECLEARED_API_KEY", "").strip(),
     )
     return env

@@ -70,6 +70,8 @@ REPLY_READERS = ("handle_replies", "read_replies")
 def in_quiet_hours(config: SellbirdConfig) -> bool:
     """Check if we're currently in quiet hours."""
     qh = config.usage.quiet_hours
+    if qh.start == qh.end:
+        return False
     tz = pytz.timezone(qh.timezone)
     now = datetime.now(tz).time()
     start = time.fromisoformat(qh.start)

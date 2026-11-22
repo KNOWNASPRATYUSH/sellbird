@@ -1051,6 +1051,25 @@ class Handler:
                         + (f"; handed off ({'ok' if handoff.get('ok') else handoff.get('error')})."
                            if handoff else "."))
 
+        # Alert you via Gmail notification if the lead is ready for a call or accepted the offer
+        call_signals = (
+            "call", "quick call", "jump on a call", "meet", "meeting", "calendar",
+            "schedule", "talk this week", "chat", "zoom", "google meet", "available"
+        )
+        is_call_ready = (
+            intent == "accepted_offer"
+            or (intent == "interested" and any(w in reply_text.lower() for w in call_signals))
+            or convo.stage in ("closing", "meeting", "closed_won")
+        )
+        if is_call_ready and not listed:
+            try:
+                from sellbird.notifier import notify_lead_ready_for_call
+                await notify_lead_ready_for_call(
+                    self.config, self.env, self.state, prospect, reply_text, intent, convo.id
+                )
+            except Exception as e:
+                logger.error(f"Handler: Failed to send call notification to Gmail: {e}")
+
         if intent not in AUTO_REPLY_INTENTS:
             logger.warning(f"Handler: No auto-reply policy for intent '{intent}'. Skipping reply.")
             return
