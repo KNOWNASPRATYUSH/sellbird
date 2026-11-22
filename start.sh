@@ -4,11 +4,9 @@ set -e
 # Ensure data directory exists
 mkdir -p /app/data
 
-# If .env does not exist on disk, synthesize one from container environment variables
-if [ ! -f /app/.env ]; then
-    echo "Creating /app/.env from container environment..."
-    env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|SELLBIRD_|PORT)' > /app/.env || true
-fi
+# Always sync /app/.env from container environment variables
+echo "Syncing /app/.env from container environment variables..."
+env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|SELLBIRD_|PORT)' > /app/.env || true
 
 # Clear any stale lockfiles from previous restarts
 rm -f /app/data/sellbird.pid /app/data/sellbird.lock
