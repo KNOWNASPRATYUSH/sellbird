@@ -143,7 +143,8 @@ def unusable_backlog_notice(summary: dict) -> str:
     _, writable = _new_counts(summary)
     recent = summary.get("recent_unusable_prospects", 0) or 0
     unprofiled = summary.get("unprofiled", 0) or 0
-    if writable or unprofiled or recent < PROSPECT_BACKLOG:
+    needing_prospects = summary.get("companies_needing_prospects", 0) or 0
+    if writable or unprofiled or needing_prospects or recent < PROSPECT_BACKLOG:
         return ""
     return (
         f"Sellbird found {recent} prospects in the last day, but none has a verified "

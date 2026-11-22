@@ -813,6 +813,8 @@ class Scout:
                             email, email_status = await self._resolve_email(
                                 first_name, last_name, domain
                             )
+                            if email_status == "guess" and getattr(self.config.channels.email, "send_to_risky", False):
+                                email_status = "risky"
 
                         prospect = Prospect(
                             first_name=first_name,
@@ -1677,6 +1679,8 @@ Respond ONLY with the JSON array."""
             email, email_status = await self._resolve_email(
                 first_name, last_name, domain
             )
+            if email_status == "guess" and getattr(self.config.channels.email, "send_to_risky", False):
+                email_status = "risky"
 
             prospect = Prospect(
                 first_name=first_name,

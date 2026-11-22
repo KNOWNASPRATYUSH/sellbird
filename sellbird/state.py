@@ -2808,5 +2808,6 @@ class StateManager:
             # these every cycle — it is free, so it never competes with the
             # Claude budget the rest of the loop is rationing.
             "unprofiled": await self.count_companies_needing_profile(),
+            "companies_needing_prospects": len(await self.companies_needing_prospects(limit=10)),
         }
 
