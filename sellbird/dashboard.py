@@ -2009,10 +2009,12 @@ async def get_discovery_providers():
 
         state = _state()
         await state.init_db()
+        def_prov = "tinyfish" if (os.getenv("TINYFISH_API_KEY") or getattr(load_env(), "tinyfish_api_key", "")) else DEFAULT_PROVIDER
+        saved_prov = await state.get_setting("discovery_provider")
         return {
             "providers": provider_menu(load_env().model_dump()),
-            "default": DEFAULT_PROVIDER,
-            "selected": await state.get_setting("discovery_provider") or DEFAULT_PROVIDER,
+            "default": def_prov,
+            "selected": saved_prov or def_prov,
             "paused": await state.get_setting("discovery_paused"),
             "running": bool(_discovery_task and not _discovery_task.done()),
             "running_kind": _discovery_kind,

@@ -404,8 +404,8 @@ class Scout:
         if self._queries_this_cycle > 1:
             await asyncio.sleep(random.uniform(*SEARCH_DELAY))
 
-        serper_key = getattr(self.env, "serper_api_key", "") or ""
-        tinyfish_key = getattr(self.env, "tinyfish_api_key", "") or ""
+        serper_key = getattr(self.env, "serper_api_key", "") or os.getenv("SERPER_API_KEY", "") or ""
+        tinyfish_key = getattr(self.env, "tinyfish_api_key", "") or os.getenv("TINYFISH_API_KEY", "") or ""
         backends = []
         if serper_key:
             backends.append(lambda: self._search_serper(query, serper_key))
