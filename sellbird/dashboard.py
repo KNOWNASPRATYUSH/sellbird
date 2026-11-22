@@ -2850,6 +2850,57 @@ async def export_cohort(require: str = "", exclude: str = "", ranges: str = ""):
     )
 
 
+@app.get("/api/database/export")
+async def export_database():
+    """Download the current data/sellbird.db file."""
+    if not DB_PATH.exists():
+        return JSONResponse({"error": "No database found"}, status_code=404)
+    data_bytes = DB_PATH.read_bytes()
+    return Response(
+        content=data_bytes,
+        media_type="application/x-sqlite3",
+        headers={"Content-Disposition": 'attachment; filename="sellbird.db"'},
+    )
+
+
+@app.post("/api/database/import")
+async def import_database(request: Request):
+    """Import an uploaded sellbird.db SQLite file into data/sellbird.db."""
+    body = await request.body()
+    if len(body) < 100 or not body.startswith(b"SQLite format 3\x00"):
+        return JSONResponse({"success": False, "message": "Not a valid SQLite database file."}, status_code=400)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
+        tmp.write(body)
+        tmp_path = Path(tmp.name)
+
+    try:
+        import sqlite3
+        con = sqlite3.connect(tmp_path)
+        cur = con.cursor()
+        tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        comp_count = cur.execute("SELECT count(*) FROM companies").fetchone()[0] if "companies" in tables else 0
+        prosp_count = cur.execute("SELECT count(*) FROM prospects").fetchone()[0] if "prospects" in tables else 0
+        con.close()
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        return JSONResponse({"success": False, "message": f"Corrupt database: {e}"}, status_code=400)
+
+    try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if DB_PATH.exists():
+            shutil.copy2(DB_PATH, DB_PATH.with_suffix(".db.bak"))
+        shutil.move(str(tmp_path), str(DB_PATH))
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        return JSONResponse({"success": False, "message": f"Failed to save database: {e}"}, status_code=500)
+
+    return {
+        "success": True,
+        "message": f"Database imported successfully! Restored {comp_count} companies and {prosp_count} prospects.",
+    }
+
+
 @app.get("/api/runs")
 async def get_runs_api():
     """The collector run log — what ran, when, what it produced and cost."""

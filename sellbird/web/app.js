@@ -1410,6 +1410,38 @@ function saveCloudflare() {
   saveEnv(payload, 'Cloudflare credentials saved.');
 }
 
+async function exportDatabase(btn) {
+  await downloadCsv('/api/database/export', 'sellbird.db', btn);
+}
+
+async function uploadDatabase(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('db-upload-status');
+  if (statusEl) statusEl.textContent = 'Uploading ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)…';
+  try {
+    const res = await authFetch('/api/database/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/octet-stream'},
+      body: file
+    });
+    const data = await res.json();
+    if (data && data.success) {
+      showToast(data.message || 'Database imported successfully!', 'success');
+      if (statusEl) statusEl.textContent = data.message + ' Refreshing…';
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      showToast((data && data.message) || 'Import failed.', 'error');
+      if (statusEl) statusEl.textContent = 'Import failed: ' + ((data && data.message) || 'Unknown error');
+    }
+  } catch (err) {
+    showToast('Failed to upload database: ' + err.message, 'error');
+    if (statusEl) statusEl.textContent = 'Upload error: ' + err.message;
+  } finally {
+    input.value = '';
+  }
+}
+
 async function testInstantly() {
   const key = document.getElementById('instantly-key').value.trim();
   const el = document.getElementById('instantly-test-result');
