@@ -971,13 +971,17 @@ class StateManager:
             await db.commit()
 
     async def mark_companies_exported(self, company_ids: list[str]):
-        """Stamp exported_at on companies so they aren't exported again."""
+        """Stamp exported_at on companies and all their prospects so they aren't exported again."""
         if not company_ids:
             return
         placeholders = ",".join("?" for _ in company_ids)
         async with self._connect() as db:
             await db.execute(
                 f"UPDATE companies SET exported_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+                company_ids,
+            )
+            await db.execute(
+                f"UPDATE prospects SET exported_at = CURRENT_TIMESTAMP WHERE company_id IN ({placeholders})",
                 company_ids,
             )
             await db.commit()
@@ -2234,11 +2238,10 @@ class StateManager:
         async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                """SELECT c.id, c.name, c.domain, c.industry
+                """SELECT c.id, c.name, c.domain, c.industry, c.phone, c.website
                    FROM companies c
                    LEFT JOIN prospects p ON p.company_id = c.id
-                   WHERE c.domain != ''
-                     AND (c.prospects_checked_at IS NULL
+                   WHERE (c.prospects_checked_at IS NULL
                           OR c.prospects_checked_at < datetime('now', ?))
                    GROUP BY c.id
                    HAVING COUNT(p.id) = 0

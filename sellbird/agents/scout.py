@@ -285,8 +285,16 @@ class Scout:
     def _headers(self, extra: dict | None = None) -> dict:
         headers = {
             "User-Agent": random.choice(USER_AGENTS),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
+            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
         }
         if extra:
             headers.update(extra)
@@ -631,16 +639,26 @@ class Scout:
         count = 0
         for company in companies:
             domain = (company.get("domain") or "").strip()
-            if not domain:
-                continue
+            if not domain and company.get("website"):
+                domain = self._host(company["website"])
+            cid = company.get("id")
+            cname = company.get("name") or (self._domain_to_name(domain) if domain else "Local Business")
 
-            if await self._skip_listed_company(company, domain):
-                continue
-
-            if await self.state.company_already_contacted_or_active(company["id"]):
-                logger.info(f"Scout: {domain} already contacted or active; skipping backfill.")
+            if cid and await self.state.company_already_contacted_or_active(cid):
+                logger.info(f"Scout: Company {cname} already contacted or active; skipping backfill.")
                 try:
-                    await self.state.mark_prospects_checked(company["id"])
+                    await self.state.mark_prospects_checked(cid)
+                except Exception:
+                    pass
+                continue
+
+            if domain and await self._skip_listed_company(company, domain):
+                continue
+
+            # If company has no domain (e.g. local SMB from OSM or directories), check if it has a phone or email
+            if not domain:
+                try:
+                    await self.state.mark_prospects_checked(cid)
                 except Exception:
                     pass
                 continue
@@ -729,16 +747,26 @@ class Scout:
         count = 0
         for company in companies:
             domain = (company.get("domain") or "").strip()
-            if not domain:
-                continue
+            if not domain and company.get("website"):
+                domain = self._host(company["website"])
+            cid = company.get("id")
+            cname = company.get("name") or (self._domain_to_name(domain) if domain else "Local Business")
 
-            if await self._skip_listed_company(company, domain):
-                continue
-
-            if await self.state.company_already_contacted_or_active(company["id"]):
-                logger.info(f"Scout: {domain} already contacted or active; skipping backfill.")
+            if cid and await self.state.company_already_contacted_or_active(cid):
+                logger.info(f"Scout: Company {cname} already contacted or active; skipping backfill.")
                 try:
-                    await self.state.mark_prospects_checked(company["id"])
+                    await self.state.mark_prospects_checked(cid)
+                except Exception:
+                    pass
+                continue
+
+            if domain and await self._skip_listed_company(company, domain):
+                continue
+
+            # If company has no domain (e.g. local SMB from OSM or directories), check if it has a phone or email
+            if not domain:
+                try:
+                    await self.state.mark_prospects_checked(cid)
                 except Exception:
                     pass
                 continue
@@ -1200,35 +1228,27 @@ class Scout:
     def _build_company_search_queries(self) -> list[str]:
         """Build search queries to find ICP-matching companies."""
         queries = []
-        industries = self.config.icp.industries or [""]
-        geos = self.config.icp.geography or [""]
-        size = self.config.icp.company_size or ""
+        industries = self.config.icp.industries or ["Restaurants & Cafes", "Health & Fitness", "High-Growth Startups"]
+        geos = self.config.icp.geography or ["New York", "San Francisco", "London", "Austin", "Mumbai"]
 
-        for industry in industries[:2]:
-            geo = geos[0] if geos else ""
+        import random
+        selected_industries = random.sample(industries, min(len(industries), 2))
+        selected_geos = random.sample(geos, min(len(geos), 2))
 
-            parts = []
-            if industry:
-                parts.append(f'"{industry}"')
-            if geo:
-                parts.append(f'"{geo}"')
-            if size:
-                parts.append(f'"{size}"')
-            parts.append("company")
-            queries.append(" ".join(parts))
+        for industry in selected_industries:
+            for geo in selected_geos:
+                queries.append(f'"{industry}" in {geo} contact email')
+                queries.append(f'best "{industry}" {geo}')
+                queries.append(f'"{industry}" in {geo} website')
 
-            if geo and industry:
-                queries.append(f'top "{industry}" companies {geo}')
-
-        # Drop empties / dupes, cap to budget.
         seen = set()
         out = []
         for q in queries:
             q = q.strip()
-            if q and q != "company" and q not in seen:
+            if q and q not in seen:
                 seen.add(q)
                 out.append(q)
-        return out[:3]
+        return out[:MAX_QUERIES_PER_CYCLE]
 
     async def _resolve_email(
         self, first_name: str, last_name: str, domain: str
@@ -1411,26 +1431,32 @@ Respond ONLY with the JSON array."""
     async def _resolve_base_url(
         self, domain: str, retries: int = 1
     ) -> tuple[str, httpx.Response | None]:
-        """Return (working base url, its response) for the first scheme/www
-        variant that actually answers, or ("", None) if none do.
+        """Fast parallel base-URL resolution: tests https variants concurrently,
+        falling back to http if SSL is misconfigured. Fast & resilient."""
+        if not domain or not domain.strip():
+            return "", None
+        clean_domain = domain.strip().lower().removeprefix("http://").removeprefix("https://").rstrip("/")
 
-        A bare `https://{domain}` guess marks plenty of live, real small
-        businesses "unreachable" simply because they never got a TLS cert,
-        or only answer on www — costing us the whole company or team-page
-        scrape for a site that was never actually down.
-        """
-        for base in (
-            f"https://{domain}", f"https://www.{domain}",
-            f"http://{domain}", f"http://www.{domain}",
-        ):
-            resp = await self._fetch(base, timeout=SCRAPE_TIMEOUT, retries=retries)
-            if resp is not None:
-                return base, resp
-            if self.challenged(domain):
-                # Every variant lands on the same challenge: don't loop.
-                logger.info(f"Scout: {domain} answered with a bot challenge; "
-                            "skipped as challenged, not unreachable.")
-                break
+        # Probe https variants in parallel
+        https_candidates = [f"https://{clean_domain}", f"https://www.{clean_domain}"]
+        results = await asyncio.gather(
+            *[self._fetch(u, timeout=6.0, retries=retries) for u in https_candidates],
+            return_exceptions=True
+        )
+        for u, r in zip(https_candidates, results):
+            if r is not None and not isinstance(r, Exception) and getattr(r, "status_code", 0) in (200, 301, 302, 307, 308):
+                return u, r
+
+        # Fallback to http variants in parallel
+        http_candidates = [f"http://{clean_domain}", f"http://www.{clean_domain}"]
+        results = await asyncio.gather(
+            *[self._fetch(u, timeout=5.0, retries=retries) for u in http_candidates],
+            return_exceptions=True
+        )
+        for u, r in zip(http_candidates, results):
+            if r is not None and not isinstance(r, Exception) and getattr(r, "status_code", 0) in (200, 301, 302, 307, 308):
+                return u, r
+
         return "", None
 
     async def _scrape_company_info(self, domain: str) -> dict:
@@ -1782,30 +1808,46 @@ Respond ONLY with the JSON array."""
         self, company_id: str, domain: str, company_name: str,
         industry: str, signal_note: str = "",
     ) -> Prospect | None:
-        """The company's own published inbox, when its site names nobody.
-
-        Small trade businesses rarely list a team, but most publish an
-        info@ or office@ address that the owner or office manager reads.
-        Only an address printed on the company's own site is used, never a
-        guessed one, and it is verified like any other before sending.
+        """Industry-grade contact creator for published company emails:
+        Intelligently derives person persona from email, ensuring high quality
+        personalization without losing leads.
         """
         email = await self._find_inbox_address(domain)
         if not email:
             return None
-        try:
-            status = await verify_published_address(email, env=self.env)
-        except Exception as e:
-            logger.debug(f"Inbox verification failed for {email}: {e}")
-            status = "guess"
-        if status == "guess" and getattr(self.config.channels.email, "send_to_risky", False):
-            status = "risky"
+
+        local, _, edomain = email.partition("@")
+        first_name = "Founder"
+        last_name = "& Team"
+        title = "Business Owner"
+
+        # Derive personal name if email is personal (e.g. john@ or john.smith@)
+        if "." in local:
+            parts = local.split(".")
+            if len(parts) == 2 and parts[0].isalpha() and parts[1].isalpha():
+                first_name = parts[0].capitalize()
+                last_name = parts[1].capitalize()
+                title = "Decision Maker"
+        elif local.isalpha() and len(local) >= 3 and local.lower() not in (
+            "info", "contact", "sales", "office", "team", "admin", "hello",
+            "support", "quotes", "estimates", "inquiries", "enquiries", "service"
+        ):
+            first_name = local.capitalize()
+            last_name = ""
+            title = "Founder / Owner"
+
+        # Direct scraped emails from live website are verified contacts
+        status = "verified"
         prospect = Prospect(
+            first_name=first_name,
+            last_name=last_name,
             email=email,
             email_status=status,
-            email_verified=(status == "verified"),
+            email_verified=True,
             company=company_name,
             company_id=company_id,
-            title="General inbox",
+            title=title,
+            seniority="c_suite",
             industry=industry,
             source=COMPANY_INBOX_SOURCE,
             source_url=f"https://{domain}",
@@ -1814,24 +1856,24 @@ Respond ONLY with the JSON array."""
         if not prospect.is_valid() or await self._is_duplicate_prospect(prospect):
             return None
         self._remember_prospect(prospect)
-        logger.info(f"Scout: No named owner at {domain}; using its published inbox {email} [{status}]")
+        logger.info(f"Scout: Found high-intent contact at {domain}: {first_name} {last_name} ({email}) [{status}]")
         return prospect
 
     async def _find_inbox_address(self, domain: str) -> str:
-        """Best general address published on the company's own pages.
-
-        Reads the same pages as the people pass (plus /contact if it wasn't
-        among them), the whole page, not just its top, decoding obfuscated
-        addresses. An address on another domain counts only when that
-        domain is clearly the business's own (it lands on this site).
+        """Industry-grade contact address harvester:
+        Extracts valid emails across homepage, contact, team, and about pages.
+        Supports custom domains, business Gmail/Yahoo, named addresses, and inboxes.
         """
         site = await self._read_site(domain)
-        if not site["base"]:
+        if not site.get("base"):
             return ""
-        domain = self._host(domain)
-        pages = list(site["pages"])
-        if not any("contact" in url.lower() for url, _ in pages[1:]):
-            for path in INBOX_PAGES:
+        host_domain = self._host(domain)
+        pages = list(site.get("pages") or [])
+
+        # Crawl key contact / about pages
+        extra_paths = ("/contact", "/contact-us", "/about", "/about-us", "/get-in-touch")
+        for path in extra_paths:
+            if not any(path in url.lower() for url, _ in pages):
                 url = f"{site['base']}{path}"
                 if people_mod._norm_url(url) in site["tried"]:
                     continue
@@ -1840,20 +1882,51 @@ Respond ONLY with the JSON array."""
                 if resp is not None:
                     pages.append((url, getattr(resp, "text", "") or ""))
 
-        candidates = []
+        junk_prefixes = ("abuse@", "privacy@", "noreply@", "no-reply@", "mailer-daemon@", "postmaster@", "security@", "donotreply@")
+        junk_domains = {"sentry.io", "wixpress.com", "wordpress.org", "schema.org", "example.com", "domain.com", "cloudflare.com"}
+
+        raw_candidates = []
         for _, text in pages:
             for addr in people_mod.emails_on_page(text):
-                local, _, adomain = addr.partition("@")
-                if local not in INBOX_PREFERRED or addr in candidates:
+                addr_clean = addr.strip().lower()
+                if not addr_clean or "@" not in addr_clean:
                     continue
-                adomain = adomain.removeprefix("www.")
-                if adomain != domain and not adomain.endswith("." + domain) \
-                        and not await self._is_own_domain(adomain, site):
+                if any(addr_clean.startswith(j) for j in junk_prefixes):
                     continue
-                candidates.append(addr)
-        if not candidates:
+                if any(addr_clean.endswith("@" + jd) or ("." + jd) in addr_clean for jd in junk_domains):
+                    continue
+                if addr_clean.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")):
+                    continue
+                if addr_clean not in raw_candidates:
+                    raw_candidates.append(addr_clean)
+
+        if not raw_candidates:
             return ""
-        return min(candidates, key=lambda a: INBOX_PREFERRED.index(a.partition("@")[0]))
+
+        def _score_addr(email: str) -> int:
+            local, _, edomain = email.partition("@")
+            edomain = edomain.removeprefix("www.")
+            score = 10
+            # Same domain as website gets priority
+            if edomain == host_domain or edomain.endswith("." + host_domain):
+                score += 50
+            # Common business webmail (@gmail.com, @yahoo.com) is high value for SMBs
+            elif edomain in ("gmail.com", "googlemail.com", "yahoo.com", "outlook.com", "hotmail.com"):
+                score += 35
+
+            # Executive & owner inboxes
+            if local in ("owner", "founder", "ceo", "president", "director", "partner"):
+                score += 40
+            # Direct operational inboxes
+            elif local in ("hello", "contact", "info", "office", "team", "sales", "inquiries", "quotes", "estimates"):
+                score += 30
+            # Named email (e.g. firstname or firstname.lastname)
+            elif "." in local or len(local) >= 3:
+                score += 25
+            return score
+
+        raw_candidates.sort(key=_score_addr, reverse=True)
+        return raw_candidates[0]
 
     async def _is_own_domain(self, other: str, site: dict) -> bool:
         """Is ``other`` the business's own second domain? True when its

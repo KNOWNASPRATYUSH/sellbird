@@ -52,7 +52,7 @@ async def collect_prospects(
     where = []
     params: list = []
     if unexported_only:
-        where.append("exported_at IS NULL")
+        where.append("(exported_at IS NULL AND (company_id IS NULL OR company_id = '' OR company_id NOT IN (SELECT id FROM companies WHERE exported_at IS NOT NULL)))")
 
     if email_type == "gmail":
         where.append("(LOWER(email) LIKE '%@gmail.com' OR LOWER(email) LIKE '%@googlemail.com')")

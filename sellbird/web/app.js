@@ -368,9 +368,9 @@ async function downloadCsv(path, filename, btn) {
 
 async function exportCompanyRegister(btn) {
   const unexported = document.getElementById('company-export-unexported') ? document.getElementById('company-export-unexported').checked : true;
-  const website = _companyFilterWebsite || 'all';
-  const emailType = _companyFilterEmail || 'all';
-  const q = _companyQuery || '';
+  const website = (document.getElementById('company-filter-website') ? document.getElementById('company-filter-website').value : _companyFilterWebsite) || 'all';
+  const emailType = (document.getElementById('company-filter-email') ? document.getElementById('company-filter-email').value : _companyFilterEmail) || 'all';
+  const q = (document.getElementById('company-search') ? document.getElementById('company-search').value : _companyQuery) || '';
 
   const path = '/api/export/companies.csv?website=' + encodeURIComponent(website) +
     '&email_type=' + encodeURIComponent(emailType) +
@@ -391,8 +391,8 @@ async function exportCompanyRegister(btn) {
 
 async function exportContacts(all, btn) {
   const unexported = document.getElementById('prospect-export-unexported') ? document.getElementById('prospect-export-unexported').checked : true;
-  const emailType = _contactEmailFilter || 'all';
-  const q = _contactQuery || '';
+  const emailType = (document.getElementById('contact-filter-email') ? document.getElementById('contact-filter-email').value : _contactEmailFilter) || 'all';
+  const q = (document.getElementById('contact-search') ? document.getElementById('contact-search').value : _contactQuery) || '';
 
   const path = '/api/export/prospects.csv?all=' + (all ? 'true' : 'false') +
     '&email_type=' + encodeURIComponent(emailType) +

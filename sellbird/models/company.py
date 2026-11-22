@@ -31,8 +31,12 @@ class Company(BaseModel):
     # (hiring, funding, ...) as [{"type": ..., "detail": ..., "found_at": ...}]
     tech_stack: list[str] = Field(default_factory=list)
     signals: list[dict] = Field(default_factory=list)
+    exported_at: datetime | None = None
+    prospects_checked_at: datetime | None = None
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+
+    model_config = {"extra": "ignore"}
 
     @field_validator("domain")
     @classmethod
