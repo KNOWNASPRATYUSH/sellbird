@@ -11,7 +11,17 @@ env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|
 awk -F= '!seen[$1]++' /app/.env > /app/.env.tmp && mv /app/.env.tmp /app/.env
 
 # Auto-restore database on boot from encrypted seed or remote cloud backup
+NEED_RESTORE=0
 if [ ! -s /app/data/sellbird.db ]; then
+    NEED_RESTORE=1
+else
+    COMP_COUNT=$(python -c "import sqlite3; con=sqlite3.connect('/app/data/sellbird.db'); cur=con.cursor(); print(cur.execute('SELECT count(id) FROM companies').fetchone()[0] if 'companies' in [r[0] for r in cur.execute('SELECT name FROM sqlite_master WHERE type=\x27table\x27').fetchall()] else 0)" 2>/dev/null || echo 0)
+    if [ "$COMP_COUNT" -eq 0 ]; then
+        NEED_RESTORE=1
+    fi
+fi
+
+if [ "$NEED_RESTORE" -eq 1 ]; then
     echo "Restoring database from encrypted seed vault..."
     python -m sellbird.seed_vault restore /app/data/sellbird.db /app/seed.enc || true
 fi
