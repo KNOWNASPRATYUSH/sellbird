@@ -1,0 +1,15 @@
+name: 24/7 Render Keep-Alive
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render Free tier from spinning down
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Sellbird Production
+        run: |
+          curl -s -f --max-time 30 https://sellbird.onrender.com/api/today || echo "Server waking up or temporary timeout"

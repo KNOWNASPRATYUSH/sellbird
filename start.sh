@@ -39,6 +39,14 @@ fi
     done
 ) &
 
+# Background keep-alive loop (pings external URL periodically to prevent idle spin-down)
+(
+    while true; do
+        sleep 600
+        curl -s --max-time 15 "https://sellbird.onrender.com/api/today" >/dev/null 2>&1 || true
+    done
+) &
+
 # Clear any stale lockfiles from previous restarts
 rm -f /app/data/sellbird.pid /app/data/sellbird.lock
 
