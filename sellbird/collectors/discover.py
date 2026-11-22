@@ -355,6 +355,7 @@ class Business:
     name: str = ""
     domain: str = ""
     website: str = ""
+    email: str = ""
     phone: str = ""
     address: str = ""
     location: str = ""
@@ -374,7 +375,15 @@ class Business:
     raw_title: str = ""             # SERP evidence for junk filtering before normalization
 
     def identity(self) -> str:
-        return self.domain or self.external_id
+        if self.domain:
+            return self.domain
+        if self.external_id:
+            return self.external_id
+        if self.name:
+            import re
+            slug = re.sub(r"[^a-z0-9]", "", self.name.lower()) + "_" + re.sub(r"[^a-z0-9]", "", (self.phone or self.location).lower())
+            return f"biz:{slug}"
+        return ""
 
 
 @dataclass
@@ -389,9 +398,16 @@ class DiscoveryQuery:
     limit: int = 100                 # max records to take from one query
     preset: str = ""                 # PRESETS key that built it, if any
     size: str = ""                   # client size filter ("small", "mid", "large", or "")
+    website: str = ""                # "", "all", "no_website", "has_website"
+    email_type: str = ""             # "", "all", "gmail", "free", "custom", "has_email"
 
     def keyword(self) -> str:
-        return f"{self.term} {self.location}".strip()
+        kw = f"{self.term} {self.location}".strip()
+        if self.email_type == "gmail" and "@gmail.com" not in kw.lower():
+            kw = f'{kw} "@gmail.com"'
+        elif self.email_type == "free" and "@" not in kw:
+            kw = f'{kw} ("@gmail.com" OR "@yahoo.com")'
+        return kw
 
 
 # DataForSEO names places "Denver,Colorado,United States" — full state name,
@@ -843,11 +859,16 @@ class Serper(DiscoveryProvider):
             domain = normalize_domain(item.get("link") or "")
             if not domain:
                 continue
+            title = item.get("title") or ""
+            snippet = item.get("snippet") or ""
+            em_match = re.search(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", f"{title} {snippet}")
+            found_email = em_match.group(0).lower() if em_match else ""
             out.append(Business(
-                name=business_name(item.get("title") or "", domain),
-                raw_title=item.get("title") or "",
+                name=business_name(title, domain),
+                raw_title=title,
                 domain=domain,
                 website=item.get("link") or "",
+                email=found_email,
                 location=query.location,
                 rank=item.get("position"),
                 has_website=True,
@@ -1002,11 +1023,15 @@ class TinyFish(DiscoveryProvider):
                 if not domain:
                     continue
                 title = item.get("title") or ""
+                snippet = item.get("snippet") or item.get("description") or ""
+                em_match = re.search(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", f"{title} {snippet}")
+                found_email = em_match.group(0).lower() if em_match else ""
                 out.append(Business(
                     name=business_name(title, domain),
                     raw_title=title,
                     domain=domain,
                     website=url,
+                    email=found_email,
                     location=query.location,
                     rank=None,
                     has_website=True,
@@ -1192,18 +1217,46 @@ class OpenStreetMap(DiscoveryProvider):
             if not name:
                 continue
             site = tags.get("website") or tags.get("contact:website") or ""
+            email = tags.get("email") or tags.get("contact:email") or ""
+            has_site = bool(site)
+
+            # Filter by website status
+            if query.website == "no_website" and has_site:
+                continue
+            if query.website == "has_website" and not has_site:
+                continue
+
+            # Filter by email type
+            if query.email_type == "gmail":
+                if not (email and email.lower().endswith("@gmail.com")):
+                    continue
+            elif query.email_type == "free":
+                from sellbird.state import FREE_MAIL_DOMAINS
+                edom = email.split("@")[-1].lower() if "@" in email else ""
+                if edom not in FREE_MAIL_DOMAINS:
+                    continue
+            elif query.email_type == "custom":
+                from sellbird.state import FREE_MAIL_DOMAINS
+                edom = email.split("@")[-1].lower() if "@" in email else ""
+                if not email or edom in FREE_MAIL_DOMAINS:
+                    continue
+            elif query.email_type == "has_email":
+                if not email:
+                    continue
+
             city = ", ".join(x for x in (tags.get("addr:city"),
                                          tags.get("addr:state")) if x)
             out.append(Business(
                 name=name,
                 domain=normalize_domain(site),
                 website=site,
+                email=email.strip().lower(),
                 phone=tags.get("phone") or tags.get("contact:phone") or "",
                 address=" ".join(x for x in (tags.get("addr:housenumber"),
                                              tags.get("addr:street")) if x),
                 location=city or query.location,
                 category=tags.get("craft") or tags.get("shop") or tags.get("office") or "",
-                has_website=bool(site),
+                has_website=has_site,
                 external_id=f"osm:{el.get('type')}/{el.get('id')}",
                 source_url=f"https://www.openstreetmap.org/{el.get('type')}/{el.get('id')}",
                 provider=self.key,
@@ -1655,7 +1708,7 @@ def preset_problem(preset: str, provider_key: str, config=None) -> str | None:
 
 def build_queries(config, cities: list[str] | None = None,
                   depth: int = 30, limit: int = 100, preset: str = "",
-                  size: str = "") -> list[DiscoveryQuery]:
+                  size: str = "", website: str = "", email_type: str = "") -> list[DiscoveryQuery]:
     """Turn the configured ICP into a concrete query list.
 
     One query per (industry or keyword variant x city). Coordinates come from
@@ -1664,6 +1717,8 @@ def build_queries(config, cities: list[str] | None = None,
     into its search; a non-local one only uses cities you pass.
     ``size`` optionally focuses the queries on small (boutique/local),
     mid (growth/scaleup), or large (enterprise/corporate) clients.
+    ``website`` can filter for businesses with or without a website.
+    ``email_type`` can filter for Gmail, free email, custom domain, or any email.
     """
     icp = config.icp
     terms = list(icp.industries) or [config.product.name]
@@ -1708,7 +1763,7 @@ def build_queries(config, cities: list[str] | None = None,
     return [
         DiscoveryQuery(term=term, location=place, depth=depth, limit=limit,
                        coordinate=coords.get(place, ""), preset=preset if spec else "",
-                       size=size)
+                       size=size, website=website, email_type=email_type)
         for term in terms
         for place in places
     ]
@@ -1834,6 +1889,28 @@ async def run_discovery(
                 report.found += len(found)
                 batch = []
                 for biz in found:
+                    has_site = bool(biz.website or biz.domain)
+                    if query.website == "no_website" and has_site:
+                        continue
+                    if query.website == "has_website" and not has_site:
+                        continue
+                    if query.email_type == "gmail":
+                        if not (biz.email and biz.email.lower().endswith("@gmail.com")):
+                            continue
+                    elif query.email_type == "free":
+                        from sellbird.state import FREE_MAIL_DOMAINS
+                        em_domain = biz.email.split("@")[-1].lower() if "@" in (biz.email or "") else ""
+                        if em_domain not in FREE_MAIL_DOMAINS:
+                            continue
+                    elif query.email_type == "custom":
+                        from sellbird.state import FREE_MAIL_DOMAINS
+                        em_domain = biz.email.split("@")[-1].lower() if "@" in (biz.email or "") else ""
+                        if not biz.email or em_domain in FREE_MAIL_DOMAINS:
+                            continue
+                    elif query.email_type == "has_email":
+                        if not biz.email:
+                            continue
+
                     if query.preset == "hiring" and biz.domain and not is_junk(biz.domain):
                         # Judged on the host as found first: jobs.lever.co
                         # stripped would be lever.co, a vendor, not junk.
@@ -1938,20 +2015,46 @@ async def _upsert(state, biz: Business, query: DiscoveryQuery) -> tuple[str, boo
         if existing is None and external:
             existing = await state.get_company_by_external_id(external)
     if existing:
-        return existing.id, False
+        cid = existing.id
+        was_new = False
+    else:
+        company = Company(
+            name=biz.name,
+            domain=biz.domain,
+            website=biz.website,
+            phone=biz.phone,
+            industry=biz.category or query.term,
+            location=biz.location or query.location,
+            source=f"discover:{biz.provider}",
+            source_url=biz.source_url,
+            external_id=biz.external_id,
+        )
+        cid = await state.add_company(company)
+        was_new = True
 
-    company = Company(
-        name=biz.name,
-        domain=biz.domain,
-        website=biz.website,
-        phone=biz.phone,
-        industry=biz.category or query.term,
-        location=biz.location or query.location,
-        source=f"discover:{biz.provider}",
-        source_url=biz.source_url,
-        external_id=biz.external_id,
-    )
-    return await state.add_company(company), True
+    if biz.email:
+        try:
+            existing_p = await state.get_prospect_by_email(biz.email)
+            if not existing_p:
+                from sellbird.models.prospect import Prospect, COMPANY_INBOX_SOURCE
+                p = Prospect(
+                    company_id=cid,
+                    company=biz.name,
+                    email=biz.email,
+                    email_status="verified",
+                    email_verified=True,
+                    phone=biz.phone,
+                    title="Business Owner",
+                    first_name="Business",
+                    last_name="Owner",
+                    source=COMPANY_INBOX_SOURCE,
+                    source_url=biz.source_url,
+                )
+                await state.add_prospect(p)
+        except Exception as e:
+            logger.warning("Failed to auto-create prospect for %s: %s", biz.email, e)
+
+    return cid, was_new
 
 
 RANK_FIELDS = ("rank", "local_pack_rank", "maps_rank")

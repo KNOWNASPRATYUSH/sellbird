@@ -748,6 +748,25 @@ async def get_companies():
         FROM companies c ORDER BY c.created_at DESC
     """)
     try:
+        from sellbird.state import FREE_MAIL_DOMAINS
+        emails_by_comp = {}
+        for r in await query_db("SELECT company_id, email FROM prospects WHERE email IS NOT NULL AND email != ''"):
+            emails_by_comp.setdefault(r["company_id"], []).append(r["email"].lower())
+
+        for c in rows:
+            c_emails = emails_by_comp.get(c["id"], [])
+            c["emails"] = c_emails
+            has_site = bool((c.get("website") or "").strip() or (c.get("domain") or "").strip())
+            c["has_website"] = has_site
+            has_free = any(any(e.endswith("@" + dom) for dom in FREE_MAIL_DOMAINS) for e in c_emails)
+            has_gmail = any(e.endswith("@gmail.com") or e.endswith("@googlemail.com") for e in c_emails)
+            c["email_type"] = "gmail" if has_gmail else ("free" if has_free else ("custom" if c_emails else "none"))
+            c["has_gmail"] = has_gmail
+            c["has_free_email"] = has_free
+    except Exception as e:
+        logger.warning(f"Company email tags unavailable: {e}")
+
+    try:
         from sellbird.config import load_config
         from sellbird.register import build_register
         register = {r["id"]: r for r in await build_register(query_db, load_config())}
@@ -1199,8 +1218,17 @@ async def get_prospects():
     undone = {r["pid"] for r in await query_db(
         "SELECT DISTINCT json_extract(details_json, '$.prospect_id') AS pid FROM actions "
         "WHERE action_type = 'opt_out_undone' AND json_valid(details_json)")}
+    try:
+        from sellbird.state import FREE_MAIL_DOMAINS
+    except Exception:
+        FREE_MAIL_DOMAINS = frozenset({"gmail.com", "googlemail.com", "yahoo.com", "hotmail.com", "outlook.com"})
     for r in rows:
         r["opt_out_undone"] = r.get("id") in undone
+        em = (r.get("email") or "").lower()
+        dom = em.split("@")[-1] if "@" in em else ""
+        r["is_free_email"] = dom in FREE_MAIL_DOMAINS
+        r["is_gmail"] = dom in ("gmail.com", "googlemail.com")
+        r["email_provider"] = "Gmail" if r["is_gmail"] else ("Free mail" if r["is_free_email"] else ("Custom domain" if dom else "None"))
     return rows
 
 
@@ -1997,12 +2025,16 @@ def _discovery_queries(body: dict, config):
         raise ValueError(problem)
     cities = [c.strip() for c in (body.get("cities") or []) if c.strip()] or None
     size = str(body.get("size") or "")
+    website = str(body.get("website") or "")
+    email_type = str(body.get("email_type") or "")
     return build_queries(
         config, cities=cities,
         depth=int(body.get("depth") or 30),
         limit=int(body.get("limit") or 100),
         preset=preset,
         size=size,
+        website=website,
+        email_type=email_type,
     )
 
 

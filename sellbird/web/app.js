@@ -923,6 +923,8 @@ function discoverBody() {
     max_spend: Number(document.getElementById('disc-cap').value) || 1,
     preset: (document.getElementById('disc-preset') || {}).value || '',
     size: (document.getElementById('disc-size') || {}).value || '',
+    website: (document.getElementById('disc-website') || {}).value || '',
+    email_type: (document.getElementById('disc-email-type') || {}).value || '',
   };
 }
 
@@ -2082,6 +2084,11 @@ async function sendingToggle(action) {
 
 const COMPANIES_PER_PAGE = 50;
 let _companiesPage = 0;
+let _companies = [];
+let _filteredCompanies = [];
+let _companyQuery = '';
+let _companyFilterWebsite = 'all';
+let _companyFilterEmail = 'all';
 
 async function loadCompanies() {
   companyDrill = false;
@@ -2095,12 +2102,53 @@ async function loadCompanies() {
       'OpenStreetMap is free and needs no account.');
     return;
   }
-  renderCompaniesPage(_companiesPage);
+  applyCompanyFilters();
+}
+
+function applyCompanyFilters() {
+  const q = (_companyQuery || '').trim().toLowerCase();
+  _filteredCompanies = _companies.filter(c => {
+    // Website filter
+    const hasSite = Boolean(c.has_website || (c.website && c.website.trim()) || (c.domain && c.domain.trim()));
+    if (_companyFilterWebsite === 'no_website' && hasSite) return false;
+    if (_companyFilterWebsite === 'has_website' && !hasSite) return false;
+
+    // Email filter
+    const emList = c.emails || [];
+    if (_companyFilterEmail === 'gmail') {
+      if (!c.has_gmail && !emList.some(e => e.includes('@gmail.com') || e.includes('@googlemail.com'))) return false;
+    } else if (_companyFilterEmail === 'free') {
+      if (!c.has_free_email && !c.has_gmail && !emList.some(e => e.includes('@gmail') || e.includes('@yahoo') || e.includes('@hotmail') || e.includes('@outlook') || e.includes('@icloud'))) return false;
+    } else if (_companyFilterEmail === 'custom') {
+      if (!emList.length || c.has_free_email || c.has_gmail) return false;
+    } else if (_companyFilterEmail === 'has_contacts') {
+      if (!c.contact_count || c.contact_count === 0) return false;
+    } else if (_companyFilterEmail === 'no_contacts') {
+      if (c.contact_count && c.contact_count > 0) return false;
+    }
+
+    // Text search
+    if (q) {
+      const match = [
+        c.name,
+        c.domain,
+        c.website,
+        c.industry,
+        c.location,
+        ...emList
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!match.includes(q)) return false;
+    }
+    return true;
+  });
+
+  _companiesPage = 0;
+  renderCompaniesPage(0);
 }
 
 function renderCompaniesPage(page) {
   const el = document.getElementById('companies-list');
-  const data = _companies;
+  const data = _filteredCompanies;
   const pages = Math.max(1, Math.ceil(data.length / COMPANIES_PER_PAGE));
   _companiesPage = Math.min(Math.max(0, page), pages - 1);
   const start = _companiesPage * COMPANIES_PER_PAGE;
@@ -2108,24 +2156,41 @@ function renderCompaniesPage(page) {
     '<th title="Company fit, 0-100: sector, decision maker, reachability, buying signal. Hover a score for why.">Fit</th>' +
     '<th title="Hover a status for why the company was or wasn\'t contacted">Status</th>' +
     '<th>Industry</th><th>Location</th><th class="num">Contacts</th><th>Added</th></tr></thead><tbody>';
-  data.slice(start, start + COMPANIES_PER_PAGE).forEach((c, j) => {
-    const i = start + j;
-    const website = c.website || (c.domain ? 'https://' + c.domain : '');
-    const domain = safeHref(website)
-      ? '<a href="' + safeHref(website) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">' +
-        escHtml(c.domain || website.replace(/^https?:\/\//i, '')) + '</a>'
-      : escHtml(c.domain);
-    html += '<tr class="clickable" onclick="showCompanyContacts(' + i + ')">' +
-      '<td><div class="cell-stack"><span class="cell-main">' + escHtml(c.name) + '</span>' +
-        '<span class="cell-sub">' + domain + '</span></div></td>' +
-      '<td title="' + escHtml((c.fit_reasons || []).join(' · ')) + '">' +
-        (typeof c.fit === 'number' ? meterHtml(c.fit) : '') + '</td>' +
-      '<td title="' + escHtml(c.register_why || '') + '">' + escHtml(c.register_status || '') + '</td>' +
-      '<td>' + (c.industry ? '<span class="tag">' + escHtml(c.industry) + '</span>' : '') + '</td>' +
-      '<td>' + escHtml(c.location) + '</td>' +
-      '<td class="num">' + (c.contact_count || 0) + '</td>' +
-      '<td class="muted">' + relTime(c.created_at) + '</td></tr>';
-  });
+
+  if (!data.length) {
+    html += '<tr><td colspan="7" style="text-align:center;padding:24px" class="muted">No companies match the selected filter.</td></tr>';
+  } else {
+    data.slice(start, start + COMPANIES_PER_PAGE).forEach((c) => {
+      const hasSite = Boolean(c.has_website || (c.website && c.website.trim()) || (c.domain && c.domain.trim()));
+      const website = c.website || (c.domain ? 'https://' + c.domain : '');
+      const domain = safeHref(website)
+        ? '<a href="' + safeHref(website) + '" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">' +
+          escHtml(c.domain || website.replace(/^https?:\/\//i, '')) + '</a>'
+        : (hasSite ? escHtml(c.domain) : '<span style="color:#ef4444;font-weight:700;font-size:11px;">NO WEBSITE (POTENTIAL CLIENT)</span>');
+
+      let badges = '';
+      if (!hasSite) {
+        badges += ' <span style="background:#ef4444;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;display:inline-block;margin-left:4px;">NO SITE</span>';
+      }
+      if (c.has_gmail || (c.emails || []).some(e => e.includes('@gmail.com'))) {
+        badges += ' <span style="background:#ea4335;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;display:inline-block;margin-left:4px;">GMAIL</span>';
+      } else if (c.has_free_email) {
+        badges += ' <span style="background:#2563eb;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;display:inline-block;margin-left:4px;">FREE MAIL</span>';
+      }
+
+      html += '<tr class="clickable" onclick="showCompanyContacts(\'' + escHtml(c.id) + '\')">' +
+        '<td><div class="cell-stack"><span class="cell-main">' + escHtml(c.name) + badges + '</span>' +
+          '<span class="cell-sub">' + domain + '</span></div></td>' +
+        '<td title="' + escHtml((c.fit_reasons || []).join(' · ')) + '">' +
+          (typeof c.fit === 'number' ? meterHtml(c.fit) : '') + '</td>' +
+        '<td title="' + escHtml(c.register_why || '') + '">' + escHtml(c.register_status || '') + '</td>' +
+        '<td>' + (c.industry ? '<span class="tag">' + escHtml(c.industry) + '</span>' : '') + '</td>' +
+        '<td>' + escHtml(c.location) + '</td>' +
+        '<td class="num">' + (c.contact_count || 0) + '</td>' +
+        '<td class="muted">' + relTime(c.created_at) + '</td></tr>';
+    });
+  }
+
   const pager = pages > 1
     ? ' &nbsp; <button class="btn btn-ghost btn-sm" ' + (_companiesPage === 0 ? 'disabled ' : '') +
         'onclick="renderCompaniesPage(' + (_companiesPage - 1) + ')">&larr; Prev</button> ' +
@@ -2134,8 +2199,8 @@ function renderCompaniesPage(page) {
         'onclick="renderCompaniesPage(' + (_companiesPage + 1) + ')">Next &rarr;</button>'
     : '';
   el.innerHTML = html + '</tbody></table></div>' +
-    '<div class="table-foot">' + (start + 1) + '–' + Math.min(start + COMPANIES_PER_PAGE, data.length) +
-    ' of ' + data.length + ' compan' + (data.length === 1 ? 'y' : 'ies') + pager + '</div>';
+    '<div class="table-foot">' + (data.length ? (start + 1) + '–' + Math.min(start + COMPANIES_PER_PAGE, data.length) : '0') +
+    ' of ' + data.length + ' matched (' + _companies.length + ' total)' + pager + '</div>';
 }
 
 // Basic facts about one company, above its contacts: where it came from,
@@ -2184,8 +2249,10 @@ function companyInfoCard(company, profile) {
   return html;
 }
 
-async function showCompanyContacts(index) {
-  const company = _companies[index];
+async function showCompanyContacts(idOrIndex) {
+  const company = typeof idOrIndex === 'string'
+    ? _companies.find(x => x.id === idOrIndex)
+    : _companies[idOrIndex];
   if (!company) return;
   companyDrill = true;
   const el = document.getElementById('companies-list');
@@ -2203,10 +2270,17 @@ async function showCompanyContacts(index) {
     html += '<table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>LinkedIn</th><th>Status</th><th>Source</th></tr></thead><tbody>';
     for (const p of data) {
       const phoneIcon = p.phone_verified ? ' <span class="muted">&#10003;</span>' : '';
+      let emailBadge = '';
+      const em = (p.email || '').toLowerCase();
+      if (p.is_gmail || em.endsWith('@gmail.com') || em.endsWith('@googlemail.com')) {
+        emailBadge = ' <span style="background:#ea4335;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">GMAIL</span>';
+      } else if (p.is_free_email) {
+        emailBadge = ' <span style="background:#2563eb;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">FREE MAIL</span>';
+      }
       html += '<tr><td><div class="cell-row"><span class="avatar">' + initials(p.first_name, p.last_name) + '</span>' +
           '<div class="cell-stack"><span class="cell-main">' + escHtml(p.first_name) + ' ' + escHtml(p.last_name) + '</span>' +
           '<span class="cell-sub">' + escHtml(p.title) + '</span></div></div></td>' +
-        '<td>' + escHtml(p.email) + emailTag(p) + '</td>' +
+        '<td>' + escHtml(p.email) + emailBadge + emailTag(p) + '</td>' +
         '<td>' + escHtml(p.phone) + phoneIcon + '</td>' +
         '<td>' + (safeHref(p.linkedin_url) ? '<a href="' + safeHref(p.linkedin_url) + '" target="_blank" rel="noopener noreferrer">Profile</a>' : '') + '</td>' +
         '<td>' + badge(p.status) + '</td><td class="muted">' + sourceLabel(p.source) + '</td></tr>';
@@ -2241,7 +2315,7 @@ function fbCampaign(i) {
 
 // Search and status filter live outside the table, so the 15-second refresh
 // re-renders rows without losing what you typed.
-let _contactQuery = '', _contactFilter = 'all';
+let _contactQuery = '', _contactFilter = 'all', _contactEmailFilter = 'all';
 const CONTACT_FILTERS = [
   ['all', 'All', null],
   ['todo', 'To write', ['new', 'queued']],
@@ -2261,11 +2335,17 @@ async function loadProspects() {
     return;
   }
   if (!document.getElementById('contact-rows')) {
-    el.innerHTML = '<div class="toolbar">' +
-      '<label class="search">' + icon('discover') +
-        '<input class="form-input" id="contact-search" type="search" placeholder="Search name, company, email" ' +
+    el.innerHTML = '<div class="toolbar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
+      '<label class="search" style="flex:2;min-width:200px;">' + icon('discover') +
+        '<input class="form-input" id="contact-search" type="search" placeholder="Search name, company, email..." ' +
         'aria-label="Search contacts" oninput="_contactQuery=this.value;renderContacts()"></label>' +
-      '<div class="segmented" id="contact-filters" role="group" aria-label="Filter by status"></div>' +
+      '<select class="form-input" id="contact-filter-email" onchange="_contactEmailFilter=this.value;renderContacts()" style="flex:1;min-width:160px;">' +
+        '<option value="all">Email: All Providers</option>' +
+        '<option value="gmail">Gmail Only (@gmail.com)</option>' +
+        '<option value="free">Gmail &amp; Free Mail</option>' +
+        '<option value="custom">Custom Domain Only</option>' +
+      '</select>' +
+      '<div class="segmented" id="contact-filters" role="group" aria-label="Filter by status" style="width:100%;margin-top:4px;"></div>' +
       '</div><div id="contact-rows"></div>';
     // A rebuild after an offline blip must show the search still applied.
     document.getElementById('contact-search').value = _contactQuery;
@@ -2288,7 +2368,21 @@ function renderContacts() {
   const filtersEl = document.getElementById('contact-filters');
   if (!rowsEl) return;
   const q = _contactQuery.trim().toLowerCase();
-  const found = p => !q || [p.first_name, p.last_name, p.company, p.email, p.title].join(' ').toLowerCase().includes(q);
+  const found = p => {
+    if (q && ![p.first_name, p.last_name, p.company, p.email, p.title].join(' ').toLowerCase().includes(q)) return false;
+    const em = (p.email || '').toLowerCase();
+    if (_contactEmailFilter === 'gmail') {
+      return p.is_gmail || em.endsWith('@gmail.com') || em.endsWith('@googlemail.com');
+    }
+    if (_contactEmailFilter === 'free') {
+      return p.is_free_email || p.is_gmail || ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com'].some(d => em.endsWith('@' + d));
+    }
+    if (_contactEmailFilter === 'custom') {
+      return em && !p.is_free_email && !p.is_gmail && !['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com'].some(d => em.endsWith('@' + d));
+    }
+    return true;
+  };
+
   filtersEl.innerHTML = CONTACT_FILTERS.map(f =>
     '<button class="' + (f[0] === _contactFilter ? 'on' : '') + '" aria-pressed="' + (f[0] === _contactFilter) + '" onclick="setContactFilter(\'' + f[0] + '\')">' +
       f[1] + ' <span class="n">' + _prospects.filter(p => contactMatches(p, f[0]) && found(p)).length + '</span></button>'
@@ -2303,11 +2397,19 @@ function renderContacts() {
   let html = '<div class="table-card"><table class="nowrap"><thead><tr><th>Name</th><th>Company</th><th>Email</th>' +
     '<th>Score</th><th>Status</th><th>Source</th><th>Added</th><th></th></tr></thead><tbody>';
   for (const [p, i] of rows) {
+    let emailBadge = '';
+    const em = (p.email || '').toLowerCase();
+    if (p.is_gmail || em.endsWith('@gmail.com') || em.endsWith('@googlemail.com')) {
+      emailBadge = ' <span style="background:#ea4335;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">GMAIL</span>';
+    } else if (p.is_free_email) {
+      emailBadge = ' <span style="background:#2563eb;color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">FREE MAIL</span>';
+    }
+
     html += '<tr><td><div class="cell-row"><span class="avatar">' + initials(p.first_name, p.last_name) + '</span>' +
         '<div class="cell-stack"><span class="cell-main">' + escHtml(p.first_name) + ' ' + escHtml(p.last_name) + '</span>' +
         '<span class="cell-sub">' + escHtml(p.title) + '</span></div></div></td>' +
       '<td>' + escHtml(p.company) + '</td>' +
-      '<td><div class="cell-stack"><span>' + escHtml(p.email) + '</span>' +
+      '<td><div class="cell-stack"><span>' + escHtml(p.email) + emailBadge + '</span>' +
         '<span class="cell-sub">' + [emailTag(p).trim(), p.phone ? escHtml(p.phone) +
           (p.phone_verified ? ' <span class="verified" title="Phone verified">&#10003;</span>' : '') : '']
           .filter(Boolean).join(' · ') + '</span>' +

@@ -232,6 +232,24 @@
           <option value="large">Big / Enterprise (100-500+ team — funded & enterprise)</option>
         </select>
       </div>
+      <div class="form-group">
+        <label class="form-label" for="disc-website">Website filter</label>
+        <select class="form-input" id="disc-website" title="Target businesses without websites (highest-intent leads for web development) or with websites.">
+          <option value="">All businesses</option>
+          <option value="no_website">No Website Only (Hot leads for Web Dev)</option>
+          <option value="has_website">Has Website Only</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="disc-email-type">Email filter</label>
+        <select class="form-input" id="disc-email-type" title="Target businesses with Gmail or free email accounts.">
+          <option value="">All email types</option>
+          <option value="gmail">Gmail Only (@gmail.com)</option>
+          <option value="free">Gmail &amp; Free Mail (SMBs)</option>
+          <option value="custom">Custom Domain Only</option>
+          <option value="has_email">Has Any Email</option>
+        </select>
+      </div>
       <div class="form-group" style="flex:2">
         <label class="form-label" for="disc-cities">Cities</label>
         <input class="form-input" id="disc-cities" placeholder="From your ICP, or override: Denver, CO; Boulder, CO">
@@ -265,6 +283,25 @@
 <div id="companies" class="section">
   <div class="section-head"><div><h2>Companies</h2><p>Organizations Sellbird has researched, best fit first. Click a row to see its contacts.</p></div>
     <div><button class="btn btn-secondary btn-sm" onclick="downloadCsv('/api/export/companies.csv', 'company-register.csv', this)"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Export register</button></div></div>
+  <div class="toolbar" style="margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    <label class="search" style="flex:2;min-width:200px;">
+      <svg class="icon" aria-hidden="true"><use href="#i-discover"/></svg>
+      <input class="form-input" id="company-search" type="search" placeholder="Search company, industry, location, email..." aria-label="Search companies" oninput="_companyQuery=this.value;applyCompanyFilters()">
+    </label>
+    <select class="form-input" id="company-filter-website" onchange="_companyFilterWebsite=this.value;applyCompanyFilters()" style="flex:1;min-width:160px;">
+      <option value="all">Website: All</option>
+      <option value="no_website">No Website (Hot Web Dev Leads)</option>
+      <option value="has_website">Has Website</option>
+    </select>
+    <select class="form-input" id="company-filter-email" onchange="_companyFilterEmail=this.value;applyCompanyFilters()" style="flex:1;min-width:160px;">
+      <option value="all">Email: All</option>
+      <option value="gmail">Has Gmail (@gmail.com)</option>
+      <option value="free">Has Free Mail (Gmail, Yahoo...)</option>
+      <option value="custom">Has Custom Domain Email</option>
+      <option value="has_contacts">Has Contacts (&gt;0)</option>
+      <option value="no_contacts">Needs Contacts (0)</option>
+    </select>
+  </div>
   <div id="companies-list"></div>
 </div>
 
