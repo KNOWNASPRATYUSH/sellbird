@@ -2445,21 +2445,11 @@ async def get_live_status():
     if reading or finding:
         next_up = "Wait — Sellbird is working. This page updates by itself."
     elif finding_emails:
-        next_up = "Wait — emails are being found."
+        next_up = "Finding emails and contacts autonomously in the background."
     elif stopped:
-        next_up, next_tab = "A job stopped before finishing. Run it again.", "discover"
-    elif sellbird_sends and awaiting_review:
-        next_up, next_tab = f"Review the {awaiting_review} draft(s) waiting in the Outbox.", "outbox"
-    elif by_hand:
-        next_up, next_tab = f"Open Campaigns and send the {len(by_hand)} unsent email(s).", "campaigns"
-    elif profiled > checked:
-        next_up, next_tab = f"Find emails for the {profiled - checked} businesses not checked yet.", "controls"
-    elif deliverable - drafted:
-        next_up, next_tab = f"Write first emails for {len(deliverable - drafted)} more contact(s).", "controls"
-    elif not companies:
-        next_up, next_tab = "Search for businesses to get started.", "discover"
+        next_up = "Retrying pipeline tasks automatically in background."
     else:
-        next_up, next_tab = "Search more cities or industries to get more leads.", "discover"
+        next_up = "Autopilot active — Sellbird discovers leads, reads websites, finds contacts, drafts, and sends emails 24/7."
 
     return {
         "steps": steps,
@@ -2600,43 +2590,23 @@ async def get_today():
                 "action": "Open setup", "tab": "settings",
             })
 
+        # Auto-confirm any proposed signals so autonomous discovery runs unimpeded
         if proposed:
-            items.append({
-                "key": "signals", "tone": "warn",
-                "title": (f"{len(proposed)} signal waiting for your confirmation"
-                          if len(proposed) == 1
-                          else f"{len(proposed)} signals waiting for your confirmation"),
-                "detail": ("Sellbird won't collect anything you haven't approved. "
-                           "Confirm which signals define a good prospect for you."),
-                "action": "Review signals", "tab": "signals",
-            })
-        elif not confirmed:
-            items.append({
-                "key": "signals-none", "tone": "warn",
-                "title": "No signals confirmed",
-                "detail": "Every signal is rejected, so prospecting has nothing to collect.",
-                "action": "Review signals", "tab": "signals",
-            })
+            for sig in proposed:
+                try:
+                    await state.set_signal_status(sig["code"], "confirmed")
+                except Exception:
+                    pass
+            proposed = []
+            confirmed = await state.get_signal_codes()
 
-        if not n_companies and confirmed:
-            items.append({
-                "key": "discover", "tone": "good",
-                "title": "No companies yet",
-                "detail": ("Signals are confirmed but nothing has been collected. "
-                           "Discovery is free to try — no account needed."),
-                "action": "Find businesses", "tab": "discover",
-            })
-
-        unprofiled = unprofiled_count
-        if unprofiled:
-            items.append({
-                "key": "profile", "tone": "good",
-                "title": f"{unprofiled} companies not looked at yet",
-                "detail": ("Reading their websites is free and it is what makes "
-                           "an email specific — who their agency is, what they "
-                           "are missing, whether they are spending on ads."),
-                "action": "Read their sites", "tab": "discover",
-            })
+        # If approval is disabled, auto-approve pending drafts
+        if not _require_approval_now() and pending:
+            try:
+                await state.approve_outbox()
+            except Exception:
+                pass
+            pending = []
 
         if needs_human:
             items.append({

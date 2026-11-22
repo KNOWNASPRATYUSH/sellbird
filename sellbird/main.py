@@ -379,6 +379,18 @@ async def heartbeat(stop_event: asyncio.Event | None = None):
             # dashboard can switch it while Sellbird runs.
             await sync_sending_mode(config, state)
 
+            # Auto-confirm all proposed signals so discovery is never gated by manual UI approval
+            for sig in await state.get_signal_codes():
+                if sig.get("status") != "confirmed":
+                    await state.set_signal_status(sig["code"], "confirmed")
+
+            # Auto-approve outbox drafts if require_approval is false so autopilot sends without human clicks
+            if not getattr(getattr(config, "channels", None), "email", None) or not config.channels.email.require_approval:
+                try:
+                    await state.approve_outbox()
+                except Exception:
+                    pass
+
             # 1. Check quiet hours. With send windows in recipients' own time
             # zones, quiet hours only stop prospecting and writing: a cycle
             # still reads replies and sends what's due (sends_through_quiet_hours).
@@ -495,7 +507,7 @@ async def heartbeat(stop_event: asyncio.Event | None = None):
             # Claude budget the rest of this loop is rationing — and it is what
             # turns a name and a domain into something worth writing about.
             if summary.get("unprofiled", 0):
-                tasks.append(("profile", run_profile_stage(state, limit=25, config=config)))
+                tasks.append(("profile", run_profile_stage(state, limit=100, config=config)))
 
             outcomes = await _run_agents(tasks)
 

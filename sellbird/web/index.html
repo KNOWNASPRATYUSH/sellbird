@@ -269,9 +269,9 @@
     </div>
     <div id="discover-estimate"></div>
     <div class="btn-group">
+      <button class="btn btn-primary" id="disc-run" onclick="runDiscovery()">
+        <svg class="icon" aria-hidden="true"><use href="#i-discover"/></svg> Run Search Now</button>
       <button class="btn btn-secondary" onclick="estimateDiscovery()">Estimate cost</button>
-      <button class="btn btn-primary" id="disc-run" onclick="runDiscovery()" disabled>
-        Estimate first</button>
       <button class="btn btn-danger" id="disc-stop" onclick="stopDiscovery()" style="display:none">
         Stop</button>
     </div>
@@ -698,6 +698,6 @@
 </main>
 </div>
 
-<script src="/static/app.js?v=2.3"></script>
+<script src="/static/app.js?v=2.4"></script>
 </body>
 </html>

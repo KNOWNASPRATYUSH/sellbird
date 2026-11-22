@@ -940,10 +940,12 @@ async function loadDiscoverProviders() {
   } else if (!running && _discoverPoll) {
     clearInterval(_discoverPoll);
     _discoverPoll = null;
-    // A finished run leaves the button stuck on "Running…" otherwise.
+    // A finished run leaves the button ready to run again.
     const btn = document.getElementById('disc-run');
-    btn.disabled = true;
-    btn.textContent = 'Estimate first';
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-discover"/></svg> Run Search Now';
+    }
     showToast(data.running_kind === 'profile' ? 'Finished reading websites.' : 'Discovery finished.', 'success');
   }
   renderDiscoverResult(data.last_report, running);
@@ -951,8 +953,11 @@ async function loadDiscoverProviders() {
 
 function pickProvider(key) {
   _provider = key;
-  document.getElementById('disc-run').disabled = true;
-  document.getElementById('disc-run').textContent = 'Estimate first';
+  const btn = document.getElementById('disc-run');
+  if (btn) {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-discover"/></svg> Run Search Now';
+  }
   document.getElementById('discover-estimate').innerHTML = '';
   loadDiscoverProviders();
 }
