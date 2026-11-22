@@ -180,6 +180,8 @@ async def decide_next_action(
     # guessed email stays 'new' for good, and counting it starved Scout.
     new_prospects, writable = _new_counts(summary)
     draft_campaigns = summary.get("draft_campaigns", 0) or 0
+    companies_needing_prospects = summary.get("companies_needing_prospects", 0) or 0
+    unprofiled = summary.get("unprofiled", 0) or 0
 
     # Drafts that can't deploy must not win the cycle: choosing send_campaign
     # for them every cycle would starve the writer and scout forever. That's
@@ -197,14 +199,51 @@ async def decide_next_action(
         action, reason = "send_campaign", f"{draft_campaigns} draft campaign(s) ready to deploy"
     elif writable > 0:
         action, reason = "write_campaign", f"{writable} new prospect(s) with no drafts ready"
+    elif companies_needing_prospects > 0:
+        action, reason = "prospect", f"{companies_needing_prospects} company(s) need email prospecting"
     elif unusable_backlog_notice(summary):
-        action, reason = "idle", "a day's worth of prospects with no usable email"
-        logger.warning(unusable_backlog_notice(summary))
+        action, reason = "discover", "unusable backlog threshold reached — discovering fresh businesses"
+        logger.info(unusable_backlog_notice(summary))
+    elif unprofiled > 0:
+        action, reason = "profile", f"{unprofiled} company(s) need website profiling"
     else:
-        action, reason = "prospect", f"{new_prospects} new prospect(s), none ready to write for"
+        action, reason = "discover", "pipeline fully processed — discovering new businesses autonomously"
 
     logger.info(f"Decision: {action} ({reason})")
     return action
+
+
+async def _run_autonomous_discovery(state: StateManager, config: SellbirdConfig):
+    """Autonomously discover businesses matching ICP so Sellbird never stalls while away."""
+    try:
+        from sellbird.collectors.discover import run_discovery, DiscoveryQuery
+        from sellbird.config import load_env
+        import random
+
+        env = load_env().model_dump()
+        industries = list(config.icp.industries or ["Restaurants & Cafes", "Health & Fitness", "High-Growth Startups"])
+        locations = list(config.icp.geography or ["New York", "San Francisco", "London", "Austin", "Mumbai"])
+        
+        term = random.choice(industries)
+        loc = random.choice(locations)
+        logger.info(f"Autonomous discovery: Finding leads for '{term}' in '{loc}'...")
+
+        provider_key = "osm"
+        if env.get("serper_api_key"):
+            provider_key = "serper"
+        elif env.get("tinyfish_api_key"):
+            provider_key = "tinyfish"
+
+        query = DiscoveryQuery(
+            term=term,
+            location=loc,
+            limit=25,
+            preset="local" if provider_key == "osm" else "yc",
+        )
+        report = await run_discovery(state, config, provider_key=provider_key, queries=[query], env=env)
+        logger.info(f"Autonomous discovery finished: {report.found} found, {report.new_companies} new companies.")
+    except Exception as e:
+        logger.warning(f"Autonomous discovery encountered an issue: {e}")
 
 
 async def _run_agents(tasks: list) -> dict:
@@ -425,11 +464,16 @@ async def heartbeat(stop_event: asyncio.Event | None = None):
 
             if action == "prospect":
                 tasks.append(("prospect", scout.run()))
-                # Analyst is cheap (no Claude calls) — keep analytics fresh
                 tasks.append(("analyze", analyst.run()))
             elif action == "write_campaign":
                 tasks.append(("write_campaign", writer.run()))
+                if summary.get("companies_needing_prospects", 0) > 0:
+                    tasks.append(("prospect", scout.run()))
+            elif action == "discover":
+                tasks.append(("discover", _run_autonomous_discovery(state, config)))
+                tasks.append(("analyze", analyst.run()))
             elif action == "idle":
+                tasks.append(("discover", _run_autonomous_discovery(state, config)))
                 tasks.append(("analyze", analyst.run()))
 
             # Sending happens in a second phase, after every agent above has

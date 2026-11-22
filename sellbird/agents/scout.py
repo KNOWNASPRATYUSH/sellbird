@@ -636,6 +636,14 @@ class Scout:
 
             if await self._skip_listed_company(company, domain):
                 continue
+
+            if await self.state.company_already_contacted_or_active(company["id"]):
+                logger.info(f"Scout: {domain} already contacted or active; skipping backfill.")
+                try:
+                    await self.state.mark_prospects_checked(company["id"])
+                except Exception:
+                    pass
+                continue
             if await hunter_searches_remaining(self.state) <= 0:
                 break
             await record_hunter_search(self.state)
@@ -725,6 +733,14 @@ class Scout:
                 continue
 
             if await self._skip_listed_company(company, domain):
+                continue
+
+            if await self.state.company_already_contacted_or_active(company["id"]):
+                logger.info(f"Scout: {domain} already contacted or active; skipping backfill.")
+                try:
+                    await self.state.mark_prospects_checked(company["id"])
+                except Exception:
+                    pass
                 continue
 
             contacts = await self._contacts_from_company(
@@ -945,6 +961,10 @@ class Scout:
             if entry := self._do_not_contact_entry(domain):
                 logger.info(
                     f"Scout: {domain} is on compliance.do_not_contact ({entry}); skipping.")
+                continue
+            existing = await self.state.get_company_by_domain(domain)
+            if existing and await self.state.company_already_contacted_or_active(existing.id):
+                logger.info(f"Scout: {domain} already contacted or active; skipping discovery.")
                 continue
             unique.append(c)
         companies = unique[:MAX_COMPANIES_PER_CYCLE]

@@ -3058,8 +3058,35 @@ async def static_file(path: str):
     )
 
 
+@app.get("/api/cron")
+async def cron_keepalive():
+    """Keep-alive ping endpoint designed for external cron services (e.g. cron-job.org).
+    Keeps the cloud instance awake and ensures the background engine is running 24/7."""
+    pid = _check_sellbird_pid()
+    auto_started = False
+    if not pid:
+        try:
+            res = await start_sellbird()
+            auto_started = res.get("success", False)
+            pid = res.get("pid")
+        except Exception as e:
+            logger.warning(f"Cron keepalive auto-start error: {e}")
+    return {
+        "status": "ok",
+        "worker_running": pid is not None,
+        "worker_pid": pid,
+        "auto_started": auto_started,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
+    if not _check_sellbird_pid():
+        try:
+            await start_sellbird()
+        except Exception:
+            pass
     return (WEB_DIR / "index.html").read_text(encoding="utf-8")
 
 

@@ -798,6 +798,94 @@ class StateManager:
             ) as cursor:
                 return bool(await cursor.fetchone())
 
+    async def get_company_by_name(self, name: str, location: str = "", phone: str = "") -> Company | None:
+        """Find an existing company by name and optional location or phone to prevent duplicate companies."""
+        if not name or not name.strip():
+            return None
+        norm_name = name.strip()
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            if phone and phone.strip():
+                clean_phone = re.sub(r"[^0-9]", "", phone)
+                if len(clean_phone) >= 7:
+                    async with db.execute(
+                        "SELECT * FROM companies WHERE phone LIKE ? LIMIT 1",
+                        (f"%{clean_phone}%",),
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                        if row:
+                            return self._company_from_row(row)
+
+            # Match exact name (case-insensitive)
+            if location and location.strip():
+                loc_part = location.strip().split(",")[0].strip()
+                async with db.execute(
+                    "SELECT * FROM companies WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) "
+                    "AND (location LIKE ? OR location IS NULL OR location = '') LIMIT 1",
+                    (norm_name, f"%{loc_part}%"),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return self._company_from_row(row)
+
+            async with db.execute(
+                "SELECT * FROM companies WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1",
+                (norm_name,),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return self._company_from_row(row)
+        return None
+
+    async def company_has_prospects(self, company_id: str) -> bool:
+        """True if the company already has at least one prospect on file."""
+        if not company_id:
+            return False
+        async with self._connect() as db:
+            async with db.execute(
+                "SELECT 1 FROM prospects WHERE company_id = ? LIMIT 1",
+                (company_id,),
+            ) as cursor:
+                return bool(await cursor.fetchone())
+
+    async def company_already_contacted_or_active(self, company_id: str, exclude_prospect_id: str = "") -> bool:
+        """True if any prospect at this company has been contacted, replied, queued,
+        or has an active or sent email in outbox. Enforces the strict rule:
+        never run duplicate outreach to the same company."""
+        if not company_id:
+            return False
+        async with self._connect() as db:
+            sql_p = (
+                "SELECT 1 FROM prospects "
+                "WHERE company_id = ? "
+                "AND status IN ('contacted', 'replied', 'interested', 'meeting', 'closed', 'queued')"
+            )
+            params_p = [company_id]
+            if exclude_prospect_id:
+                sql_p += " AND id != ?"
+                params_p.append(exclude_prospect_id)
+            sql_p += " LIMIT 1"
+            async with db.execute(sql_p, tuple(params_p)) as cursor:
+                if await cursor.fetchone():
+                    return True
+
+            sql_o = (
+                "SELECT 1 FROM outbox o "
+                "JOIN prospects p ON o.prospect_id = p.id "
+                "WHERE p.company_id = ? "
+                "AND o.status IN ('pending_review', 'approved', 'sending', 'sent')"
+            )
+            params_o = [company_id]
+            if exclude_prospect_id:
+                sql_o += " AND p.id != ?"
+                params_o.append(exclude_prospect_id)
+            sql_o += " LIMIT 1"
+            async with db.execute(sql_o, tuple(params_o)) as cursor:
+                if await cursor.fetchone():
+                    return True
+
+        return False
+
     # ── Prospects (Contacts) ──
 
     @staticmethod

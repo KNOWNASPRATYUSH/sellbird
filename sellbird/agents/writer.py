@@ -233,6 +233,26 @@ class Writer:
             p for p in prospects_with_email
             if not await self.state.colleague_who_replied(p.id)
         ]
+
+        # Strict Single-Contact-Per-Company:
+        # 1. Do not contact a company that has already been contacted or has active outreach in outbox.
+        # 2. Never draft emails for more than one person per company in the same cycle.
+        seen_companies = set()
+        deduped = []
+        for p in prospects_with_email:
+            if not p.company_id:
+                deduped.append(p)
+                continue
+            if p.company_id in seen_companies:
+                continue
+            if await self.state.company_already_contacted_or_active(p.company_id, exclude_prospect_id=p.id):
+                logger.info(
+                    f"Writer: Skipping {p.full_name()} — company {p.company} already contacted or has active campaign/outbox."
+                )
+                continue
+            seen_companies.add(p.company_id)
+            deduped.append(p)
+        prospects_with_email = deduped
         if not prospects_with_email:
             logger.info(
                 "Writer: No prospects with deliverable (verified/risky) emails yet."

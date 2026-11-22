@@ -2014,6 +2014,9 @@ async def _upsert(state, biz: Business, query: DiscoveryQuery) -> tuple[str, boo
     for external in (biz.external_id, *biz.alt_ids):
         if existing is None and external:
             existing = await state.get_company_by_external_id(external)
+    if existing is None and biz.name:
+        existing = await state.get_company_by_name(biz.name, location=biz.location, phone=biz.phone)
+
     if existing:
         cid = existing.id
         was_new = False
@@ -2034,23 +2037,27 @@ async def _upsert(state, biz: Business, query: DiscoveryQuery) -> tuple[str, boo
 
     if biz.email:
         try:
-            existing_p = await state.get_prospect_by_email(biz.email)
-            if not existing_p:
-                from sellbird.models.prospect import Prospect, COMPANY_INBOX_SOURCE
-                p = Prospect(
-                    company_id=cid,
-                    company=biz.name,
-                    email=biz.email,
-                    email_status="verified",
-                    email_verified=True,
-                    phone=biz.phone,
-                    title="Business Owner",
-                    first_name="Business",
-                    last_name="Owner",
-                    source=COMPANY_INBOX_SOURCE,
-                    source_url=biz.source_url,
-                )
-                await state.add_prospect(p)
+            # Enforce single-contact-per-company and do not add prospects if company was already contacted
+            already_active = await state.company_already_contacted_or_active(cid)
+            has_contacts = await state.company_has_prospects(cid)
+            if not already_active and not has_contacts:
+                existing_p = await state.get_prospect_by_email(biz.email)
+                if not existing_p:
+                    from sellbird.models.prospect import Prospect, COMPANY_INBOX_SOURCE
+                    p = Prospect(
+                        company_id=cid,
+                        company=biz.name,
+                        email=biz.email,
+                        email_status="verified",
+                        email_verified=True,
+                        phone=biz.phone,
+                        title="Business Owner",
+                        first_name="Business",
+                        last_name="Owner",
+                        source=COMPANY_INBOX_SOURCE,
+                        source_url=biz.source_url,
+                    )
+                    await state.add_prospect(p)
         except Exception as e:
             logger.warning("Failed to auto-create prospect for %s: %s", biz.email, e)
 
