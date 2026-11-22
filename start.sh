@@ -4,9 +4,11 @@ set -e
 # Ensure data directory exists
 mkdir -p /app/data
 
-# Always sync /app/.env from container environment variables
-echo "Syncing /app/.env from container environment variables..."
-env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|SELLBIRD_|PORT)' > /app/.env || true
+# Sync /app/.env from container environment variables without losing existing keys
+touch /app/.env
+env | grep -E '^(GROQ_|SMTP_|IMAP_|TINYFISH_|SERPER_|REOON_|ZEROBOUNCE_|HUNTER_|SELLBIRD_|PORT)' >> /app/.env || true
+# Deduplicate entries in .env, letting newer non-empty container env entries take precedence
+awk -F= '!seen[$1]++' /app/.env > /app/.env.tmp && mv /app/.env.tmp /app/.env
 
 # Clear any stale lockfiles from previous restarts
 rm -f /app/data/sellbird.pid /app/data/sellbird.lock

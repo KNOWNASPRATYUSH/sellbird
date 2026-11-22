@@ -874,6 +874,14 @@ async function loadDiscoverProviders() {
           '<a href="' + safeHref(p.signup_url) + '" target="_blank" rel="noopener noreferrer">get a key</a>' +
           '</span></div>'
         : '') +
+      (p.needs_key && !p.configured
+        ? '<div style="margin-top:10px;padding:8px;background:rgba(255,255,255,0.04);border:1px dashed #444;border-radius:6px;" onclick="event.stopPropagation()">' +
+          '<div style="font-size:11px;color:#aaa;margin-bottom:4px;">Paste ' + escHtml(p.env_keys[0]) + ':</div>' +
+          '<div style="display:flex;gap:6px;">' +
+          '<input type="password" id="inline-key-' + escHtml(p.key) + '" placeholder="Paste key here" style="flex:1;background:#111;border:1px solid #333;color:#eee;padding:4px 8px;border-radius:4px;font-size:12px;">' +
+          '<button class="btn btn-secondary btn-sm" onclick="saveInlineKey(' + jsq(p.env_keys[0]) + ', ' + jsq(p.key) + ')">Save</button>' +
+          '</div></div>'
+        : '') +
       (p.caveat ? '<div class="caveat">' + escHtml(p.caveat) + '</div>' : '') +
     '</div>';
   }).join('') + '</div>';
@@ -1271,6 +1279,8 @@ async function loadSettings() {
   savedPh('reoon-key', data.reoon_api_key_set, '600 free/mo — reoon.com/email-verifier');
   savedPh('zerobounce-key', data.zerobounce_api_key_set, '100 free/mo — best for M365/Workspace catch-alls');
   savedPh('hunter-key', data.hunter_api_key_set, '50 free/mo + email-pattern lookup');
+  savedPh('tinyfish-key', data.tinyfish_api_key_set, 'sk-tinyfish-... (free at agent.tinyfish.ai/api-keys)');
+  savedPh('serper-key', data.serper_api_key_set, 'Google Search API key (2,500 free searches)');
   savedPh('linkedin-password', data.linkedin_password_set, 'Enter password');
   savedPh('cf-api-token', data.cloudflare_api_token_set, 'Your Cloudflare API Token');
 
@@ -1294,6 +1304,8 @@ async function loadSettings() {
   tag('reoon-status', data.reoon_api_key_set, 'set');
   tag('zerobounce-status', data.zerobounce_api_key_set, 'set');
   tag('hunter-status', data.hunter_api_key_set, 'set');
+  tag('tinyfish-status', data.tinyfish_api_key_set, 'set');
+  tag('serper-status', data.serper_api_key_set, 'set');
 }
 
 function saveGmail() {
@@ -1340,6 +1352,32 @@ function saveVerifiers() {
   if (h) payload.HUNTER_API_KEY = h;
   if (!Object.keys(payload).length) { showToast('Enter at least one key first.', 'error'); return; }
   saveEnv(payload, 'Verification keys saved.').then(loadSettings);
+}
+
+function saveSearchKeys() {
+  const payload = {};
+  const tf = (document.getElementById('tinyfish-key') || {}).value?.trim?.() || '';
+  const sp = (document.getElementById('serper-key') || {}).value?.trim?.() || '';
+  if (tf) payload.TINYFISH_API_KEY = tf;
+  if (sp) payload.SERPER_API_KEY = sp;
+  if (!Object.keys(payload).length) { showToast('Enter at least one key first.', 'error'); return; }
+  saveEnv(payload, 'Search keys saved.').then(() => {
+    loadSettings();
+    if (typeof loadDiscoverProviders === 'function') loadDiscoverProviders();
+  });
+}
+
+async function saveInlineKey(envVarName, provKey) {
+  const input = document.getElementById('inline-key-' + provKey);
+  if (!input || !input.value.trim()) {
+    showToast('Paste the key first.', 'error');
+    return;
+  }
+  const payload = {};
+  payload[envVarName] = input.value.trim();
+  await saveEnv(payload, envVarName + ' saved successfully.');
+  loadDiscoverProviders();
+  if (typeof loadSettings === 'function') loadSettings();
 }
 
 async function saveEnv(payload, okMsg) {

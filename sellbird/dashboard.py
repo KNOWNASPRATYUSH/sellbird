@@ -395,6 +395,7 @@ async def get_settings():
         "IMAP_HOST", "IMAP_PORT", "IMAP_USERNAME", "IMAP_PASSWORD",
         "M365_CLIENT_ID", "M365_TENANT_ID",
         "REOON_API_KEY", "ZEROBOUNCE_API_KEY", "HUNTER_API_KEY",
+        "TINYFISH_API_KEY", "SERPER_API_KEY", "GROQ_API_KEY",
     ]
     for key in all_keys:
         if key not in env_vars:
@@ -434,6 +435,9 @@ async def get_settings():
         "reoon_api_key_set": is_set("REOON_API_KEY"),
         "zerobounce_api_key_set": is_set("ZEROBOUNCE_API_KEY"),
         "hunter_api_key_set": is_set("HUNTER_API_KEY"),
+        "tinyfish_api_key_set": is_set("TINYFISH_API_KEY"),
+        "serper_api_key_set": is_set("SERPER_API_KEY"),
+        "groq_api_key_set": is_set("GROQ_API_KEY"),
     }
 
 
@@ -454,7 +458,8 @@ async def save_env_settings(request: Request):
                      "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD",
                      "IMAP_HOST", "IMAP_PORT", "IMAP_USERNAME", "IMAP_PASSWORD",
                      "M365_CLIENT_ID", "M365_TENANT_ID",
-                     "REOON_API_KEY", "ZEROBOUNCE_API_KEY", "HUNTER_API_KEY"]:
+                     "REOON_API_KEY", "ZEROBOUNCE_API_KEY", "HUNTER_API_KEY",
+                     "TINYFISH_API_KEY", "SERPER_API_KEY", "GROQ_API_KEY"]:
             if key in data and data[key] is not None:
                 value = data[key]
                 if isinstance(value, bool) or not isinstance(value, (str, int, float)):
@@ -478,9 +483,8 @@ async def save_env_settings(request: Request):
                 return {"success": False, "message": "Could not write .env file."}
             # The sign-in clients take effect now, so the Inboxes tab can sign in
             # without a restart (load_dotenv never overwrites a value already set).
-            for key in ("GMAIL_CLIENT_ID", "GMAIL_CLIENT_SECRET", "M365_CLIENT_ID", "M365_TENANT_ID"):
-                if key in updates:
-                    os.environ[key] = updates[key]
+            for key in updates:
+                os.environ[key] = updates[key]
     return {"success": True}
 
 

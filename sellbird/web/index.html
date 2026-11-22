@@ -417,6 +417,24 @@
     </div>
   </div>
 
+  <div class="subhead">Search & Discovery <span class="hint">Recommended</span></div>
+  <div class="card">
+    <div class="settings-row">
+      <div>
+        <h3>Web Search (TinyFish)</h3>
+        <p class="desc">Search provider for discovering businesses that match your customer profile. TinyFish provides 500 free searches per hour with a free API key.</p>
+      </div>
+      <div class="fields">
+        <div class="form-group"><label class="form-label" for="tinyfish-key">TinyFish API key <span id="tinyfish-status" class="email-tag"></span></label>
+          <div class="with-btn"><input type="password" class="form-input" id="tinyfish-key" placeholder="sk-tinyfish-... (free at agent.tinyfish.ai/api-keys)" autocomplete="off">
+            <button class="btn btn-secondary" onclick="toggleVisibility('tinyfish-key')">Show</button></div></div>
+        <div class="form-group"><label class="form-label" for="serper-key">Serper API key (Optional) <span id="serper-status" class="email-tag"></span></label>
+          <input type="password" class="form-input" id="serper-key" placeholder="Google Search API key (2,500 free searches)" autocomplete="off"></div>
+        <button class="btn btn-primary btn-sm" onclick="saveSearchKeys()">Save search keys</button>
+      </div>
+    </div>
+  </div>
+
   <div class="subhead">Email verification <span class="hint">Strongly recommended</span></div>
   <div class="card">
     <div class="settings-row">

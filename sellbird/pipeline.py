@@ -102,9 +102,10 @@ async def run_prospecting(
 
     report = PipelineReport()
 
-    active_provider = provider or DEFAULT_PROVIDER
-    if not provider and active_provider == "tinyfish" and not load_env().tinyfish_api_key:
-        active_provider = "osm"
+    import os
+    env = load_env()
+    has_tinyfish = bool((getattr(env, "tinyfish_api_key", "") or os.getenv("TINYFISH_API_KEY", "")).strip())
+    active_provider = provider or ("tinyfish" if has_tinyfish else DEFAULT_PROVIDER)
 
     discovery = await run_discovery(
         state, config, active_provider, queries,
