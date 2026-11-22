@@ -38,6 +38,36 @@ It runs on your own machine, and by default nothing goes out until you approve i
 
 <sub>The demo data is invented: "Bookwell" selling online booking to roofers, dental practices and HVAC shops, on `.test` domains.</sub>
 
+## 🚀 Custom Enhancements & Cloud Upgrades in This Fork
+
+This repository has been extended into a fully autonomous, production-ready 24/7 cloud sales engine with custom persistence, intelligent client filtering, and real-time lead alerts:
+
+### 1. 24/7 Cloud Autopilot (No Manual Gate Needed)
+* **Full Autopilot Sending (`require_approval: false`)**: The AI agent discovers businesses, writes tailored cold outreach, schedules sends, and drafts replies autonomously without waiting for manual human approval.
+* **Continuous 24/7 Heartbeat**: Quiet-hours pauses were removed (`start: 00:00`, `end: 00:00`), allowing the 5-minute autonomous worker loop to scrape, profile, and email prospects round the clock.
+* **Auto-Boot Staging**: Automatically auto-confirms all 29 buying signals and approves queued outbox items when the container boots.
+
+### 2. Cloud Persistence & Encrypted Seed Vault (Render-Ready)
+* **Zero Data Loss on Ephemeral Storage**: Render Free tier wipes disk space on container restarts. We implemented an AES-256 encrypted database vault (`sellbird/seed_vault.py`) that auto-restores all companies, contacts, campaigns, and outbox records on startup.
+* **Headless Secret Store**: Added file-based fallback (`FileSecretBackend` in `sellbird/secrets.py`) for headless Docker containers without a desktop OS keychain.
+* **Automated 24/7 Keep-Alive**: Integrated multi-layer keepalive pings (GitHub Actions cron workflow `.github/workflows/keepalive.yml` + internal container loop + external web cron) to prevent Render free instances from spinning down after 15 minutes of inactivity.
+
+### 3. Client Size Filtering in Discovery
+* **Target Scale Selection**: Added a **Client size** dropdown filter directly into the **Discover** web dashboard and CLI (`--size small|mid|large`).
+* **Intelligent Query Adaptation**: Automatically modifies search terms for:
+  * **Small (1–25 team)**: Boutique brands, local businesses, founder-led operators.
+  * **Mid-size (25–100 team)**: Scaling brands, funded startups, mid-market companies.
+  * **Big / Enterprise (100–500+ team)**: Enterprise and corporate organizations.
+
+### 4. Real-Time High-Intent Gmail Alerts
+* **Instant Call Notifications**: Integrated an automated notification service (`sellbird/notifier.py`) into the reply handler.
+* **Lead Dispatch**: The moment a prospect responds asking for a quick call, meeting, zoom, or accepting your offer, an alert email is sent to your personal Gmail with lead details and their message.
+* **Smart Deduplication**: Enforces a per-conversation alert lock to guarantee exactly one high-priority alert per interested lead.
+
+### 5. UI & Provider Key Controls
+* **Inline Key Configuration**: Added direct API key inputs on provider cards in the web UI for TinyFish and Serper.
+* **1-Click Database Export & Import**: Added web-based SQLite database download and restore tools under **Settings → Data & Backups**.
+
 ## What it does
 
 Sellbird is a pipeline you can run end to end, or stop at any step.
