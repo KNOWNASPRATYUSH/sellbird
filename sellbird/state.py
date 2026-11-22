@@ -10,6 +10,7 @@ upgrade cleanly in place.
 """
 
 import json
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -806,15 +807,19 @@ class StateManager:
         async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             if phone and phone.strip():
+                raw_phone = phone.strip()
                 clean_phone = re.sub(r"[^0-9]", "", phone)
-                if len(clean_phone) >= 7:
-                    async with db.execute(
-                        "SELECT * FROM companies WHERE phone LIKE ? LIMIT 1",
-                        (f"%{clean_phone}%",),
-                    ) as cursor:
-                        row = await cursor.fetchone()
-                        if row:
-                            return self._company_from_row(row)
+                sql_phone = (
+                    "SELECT * FROM companies WHERE phone = ? OR phone LIKE ? "
+                    "OR REPLACE(REPLACE(REPLACE(REPLACE(phone, '-', ''), ' ', ''), '(', ''), ')', '') LIKE ? LIMIT 1"
+                )
+                async with db.execute(
+                    sql_phone,
+                    (raw_phone, f"%{raw_phone}%", f"%{clean_phone}%"),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return self._company_from_row(row)
 
             # Match exact name (case-insensitive)
             if location and location.strip():
