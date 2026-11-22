@@ -306,6 +306,14 @@ async def heartbeat(stop_event: asyncio.Event | None = None):
     await state.init_db()
     logger.info("Database initialized.")
 
+    # Auto-confirm signals so discovery can collect businesses autonomously
+    from sellbird.signals import seed_signal_catalog
+    await seed_signal_catalog(state)
+    if not await state.confirmed_signal_codes():
+        logger.info("No signals confirmed yet — auto-confirming default signals for autonomous prospecting.")
+        for sig in await state.get_signal_codes():
+            await state.set_signal_status(sig["code"], "confirmed")
+
     # Import agents here to avoid circular imports
     from sellbird.agents.scout import Scout
     from sellbird.agents.writer import Writer
