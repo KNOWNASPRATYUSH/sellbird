@@ -4,6 +4,12 @@ set -e
 # Ensure data directory exists
 mkdir -p /app/data
 
+# If .env does not exist on disk, synthesize one from container environment variables
+if [ ! -f /app/.env ]; then
+    echo "Creating /app/.env from container environment..."
+    env | grep -E '^(GROQ_|SMTP_|IMAP_|SELLBIRD_|PORT)' > /app/.env || true
+fi
+
 # Clear any stale lockfiles from previous restarts
 rm -f /app/data/sellbird.pid /app/data/sellbird.lock
 

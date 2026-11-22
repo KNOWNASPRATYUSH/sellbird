@@ -510,8 +510,9 @@ def _needs_setup() -> bool:
 
     env_file = PROJECT_ROOT / ".env"
 
-    # If .env doesn't exist, definitely needs setup
-    if not env_file.exists():
+    # If .env doesn't exist and no cloud env vars set, needs setup
+    has_env = env_file.exists() or bool(os.getenv("SMTP_HOST") or os.getenv("GROQ_API_KEY"))
+    if not has_env:
         return True
 
     # sellbird.local.yaml wins over the tracked sellbird.yaml template, same
