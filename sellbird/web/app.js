@@ -922,6 +922,7 @@ function discoverBody() {
     limit: Number(document.getElementById('disc-limit').value) || 100,
     max_spend: Number(document.getElementById('disc-cap').value) || 1,
     preset: (document.getElementById('disc-preset') || {}).value || '',
+    size: (document.getElementById('disc-size') || {}).value || '',
   };
 }
 

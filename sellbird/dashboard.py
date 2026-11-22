@@ -1996,11 +1996,13 @@ def _discovery_queries(body: dict, config):
     if problem:
         raise ValueError(problem)
     cities = [c.strip() for c in (body.get("cities") or []) if c.strip()] or None
+    size = str(body.get("size") or "")
     return build_queries(
         config, cities=cities,
         depth=int(body.get("depth") or 30),
         limit=int(body.get("limit") or 100),
         preset=preset,
+        size=size,
     )
 
 

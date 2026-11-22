@@ -659,12 +659,14 @@ def cmd_discover(args):
         # Semicolons, not commas: "Denver, CO" is one city, not two.
         cities = [c.strip() for c in args.city.split(";") if c.strip()] or None
         preset = getattr(args, "preset", "") or ""
+        size = getattr(args, "size", "") or ""
         problem = preset_problem(preset, args.provider, config=config)
         if problem:
             print(f"\n  {problem}\n")
             sys.exit(2)
         queries = build_queries(config, cities=cities,
-                                depth=args.depth, limit=args.limit, preset=preset)
+                                depth=args.depth, limit=args.limit, preset=preset,
+                                size=size)
 
         report = await run_discovery(state, config, args.provider, queries,
                                      max_spend=args.max_spend, dry_run=True)
@@ -1246,6 +1248,8 @@ def main():
                           "accelerator: ones backed by Techstars, Antler, EF, SPC, 500 Global, "
                           "Neo, AI Grant, a16z speedrun or Plug and Play; "
                           "funding: companies announcing a raise on their own site in the last 18 months")
+    sub.add_argument("--size", default="", choices=["", "small", "mid", "large"],
+                     help="Client size filter: small (boutique/local/SMB), mid (growing/scaleup), or large (enterprise/funded)")
     sub.add_argument("--no-profile", action="store_true",
                      help="Don't profile what was found (profiling is free)")
     sub.set_defaults(func=cmd_discover)

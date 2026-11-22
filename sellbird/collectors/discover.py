@@ -388,6 +388,7 @@ class DiscoveryQuery:
     depth: int = 30                  # SERP depth; ignored by listings providers
     limit: int = 100                 # max records to take from one query
     preset: str = ""                 # PRESETS key that built it, if any
+    size: str = ""                   # client size filter ("small", "mid", "large", or "")
 
     def keyword(self) -> str:
         return f"{self.term} {self.location}".strip()
@@ -1653,13 +1654,16 @@ def preset_problem(preset: str, provider_key: str, config=None) -> str | None:
 
 
 def build_queries(config, cities: list[str] | None = None,
-                  depth: int = 30, limit: int = 100, preset: str = "") -> list[DiscoveryQuery]:
+                  depth: int = 30, limit: int = 100, preset: str = "",
+                  size: str = "") -> list[DiscoveryQuery]:
     """Turn the configured ICP into a concrete query list.
 
     One query per (industry or keyword variant x city). Coordinates come from
     ``icp.geo_coordinates`` when present, because listings providers need a
     radius, not a place name. A ``preset`` (PRESETS) rewrites each industry
     into its search; a non-local one only uses cities you pass.
+    ``size`` optionally focuses the queries on small (boutique/local),
+    mid (growth/scaleup), or large (enterprise/corporate) clients.
     """
     icp = config.icp
     terms = list(icp.industries) or [config.product.name]
@@ -1680,11 +1684,31 @@ def build_queries(config, cities: list[str] | None = None,
         terms = list(dict.fromkeys(
             v.strip() for t in terms for v in [t, *variants.get(t, [])] if v.strip()))
         places = cities if cities is not None else list(icp.geography) or [""]
+
+    if size and not spec:
+        size_keywords = {
+            "small": ["boutique", "independent", "local"],
+            "mid": ["growing", "mid-market", "scaleup"],
+            "large": ["enterprise", "corporate", "funded"],
+        }
+        mods = size_keywords.get(size.lower(), [])
+        if mods:
+            sized_terms = []
+            for t in terms:
+                if not any(m in t.lower() for m in mods):
+                    for m in mods[:2]:
+                        sized_terms.append(f"{m} {t}".strip())
+                else:
+                    sized_terms.append(t)
+            if sized_terms:
+                terms = sized_terms
+
     coords = getattr(icp, "geo_coordinates", {}) or {}
 
     return [
         DiscoveryQuery(term=term, location=place, depth=depth, limit=limit,
-                       coordinate=coords.get(place, ""), preset=preset if spec else "")
+                       coordinate=coords.get(place, ""), preset=preset if spec else "",
+                       size=size)
         for term in terms
         for place in places
     ]
