@@ -1730,12 +1730,23 @@ async def run_discovery(
     env = load_env().model_dump()
     missing = provider.missing_keys(env)
     if missing:
-        names = ", ".join(k.upper() for k in missing)
-        report.errors.append(
-            f"{provider.label} is not ready: {names} is empty or still the "
-            f"template placeholder in .env")
-        report.stopped = "not configured"
-        return report
+        # If TinyFish is missing its key, automatically fall back to OpenStreetMap (100% free, no key needed)
+        if provider_key == "tinyfish" and "osm" in PROVIDERS:
+            logger.info("TinyFish API key not found; falling back to OpenStreetMap so discovery continues.")
+            provider_key = "osm"
+            provider = PROVIDERS["osm"]
+            queries = build_queries(config)
+            queries = await resolve_coordinates(state, queries)
+            report.provider = "osm"
+            report.estimated_cost = 0.0
+            missing = []
+        else:
+            names = ", ".join(k.upper() for k in missing)
+            report.errors.append(
+                f"{provider.label} is not ready: {names} is empty or still the "
+                f"template placeholder in .env")
+            report.stopped = "not configured"
+            return report
 
     if report.estimated_cost > max_spend:
         report.errors.append(
