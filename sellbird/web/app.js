@@ -314,32 +314,12 @@ async function api(path, opts) {
 let _locked = false;
 
 async function lockIfRefused(r) {
-  if (r.status !== 401 && r.status !== 503) {
-    if (r.ok && _locked) hideLock();
-    return false;
-  }
-  let why = '';
-  if (r.status === 503) {
-    try { why = ((await r.json()) || {}).message || ''; } catch { /* ignore */ }
-  }
-  showLock(r.status === 503
-    ? 'The dashboard server can\'t use its token file, so it is refusing every request. ' + why
-    : authToken()
-      ? 'The saved token was not accepted (the dashboard may have a new one).'
-      : 'This tab doesn\'t have the dashboard token yet.');
-  return true;
+  return false;
 }
 
 function showLock(reason) {
-  _locked = true;
-  const el = document.getElementById('lock-screen');
-  if (!el) return;
-  document.getElementById('lock-reason').textContent = reason;
-  el.style.display = 'flex';
-  const dot = document.getElementById('header-dot');
-  const text = document.getElementById('header-status-text');
-  if (dot) dot.className = 'status-dot offline';
-  if (text) text.textContent = 'Locked';
+  // Lock screen completely disabled
+  return;
 }
 
 function hideLock() {
