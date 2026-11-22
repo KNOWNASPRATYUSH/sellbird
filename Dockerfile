@@ -19,10 +19,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source code
 COPY . .
+COPY start.sh .
 
 # Ensure start script is executable
 RUN chmod +x start.sh
 
 EXPOSE 8000
 
-CMD ["./start.sh"]
+CMD ["/bin/bash", "./start.sh"]
