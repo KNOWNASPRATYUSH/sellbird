@@ -78,7 +78,7 @@ channels:
     - www.knownaspratyush.online
     - coffeeandcravings.shop
     - india-fitness.vercel.app
-    send_to_risky: false
+    send_to_risky: true
     max_bounce_rate: 0.05
     warmup:
       start_date: ''

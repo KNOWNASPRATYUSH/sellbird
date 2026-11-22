@@ -140,7 +140,8 @@ def unusable_backlog_notice(summary: dict) -> str:
     """Why Sellbird paused prospecting for the day, or ""."""
     _, writable = _new_counts(summary)
     recent = summary.get("recent_unusable_prospects", 0) or 0
-    if writable or recent < PROSPECT_BACKLOG:
+    unprofiled = summary.get("unprofiled", 0) or 0
+    if writable or unprofiled or recent < PROSPECT_BACKLOG:
         return ""
     return (
         f"Sellbird found {recent} prospects in the last day, but none has a verified "
