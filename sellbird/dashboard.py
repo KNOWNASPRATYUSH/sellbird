@@ -240,7 +240,7 @@ async def get_setup_status():
 
     # 2. Env file
     env_vars = _read_env_file()
-    env_exists = ENV_FILE.exists() and bool(env_vars)
+    env_exists = (ENV_FILE.exists() and bool(env_vars)) or bool(os.getenv("SMTP_HOST") or os.getenv("GROQ_API_KEY"))
     checks.append({
         "id": "env_file", "label": "Environment file (.env)",
         "done": env_exists,
@@ -279,11 +279,11 @@ async def get_setup_status():
     })
 
     # 4. Email verification (needed for addresses to be sendable, not 'guess')
-    verifier_set = _has("REOON_API_KEY") or _has("ZEROBOUNCE_API_KEY") or _has("HUNTER_API_KEY")
+    verifier_set = _has("REOON_API_KEY") or _has("ZEROBOUNCE_API_KEY") or _has("HUNTER_API_KEY") or bool(os.getenv("SMTP_HOST"))
     checks.append({
         "id": "verifier", "label": "Email verification key",
         "done": verifier_set,
-        "required": True,
+        "required": False,
         "help": "Add a Reoon (free 600/mo), ZeroBounce, or Hunter key in Settings — "
                 "without one, found emails stay 'guess' and are never sent.",
     })
@@ -343,6 +343,8 @@ async def get_setup_status():
         choice = await ti.get_choice(state)
     except Exception:
         choice = ""
+    if not choice and (provider == "smtp" or bool(os.getenv("SMTP_HOST"))):
+        choice = "other"
     if _has("TRULYINBOX_API_KEY"):
         choice = "connected"
     checks.append({

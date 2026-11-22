@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure data directory exists
+mkdir -p /app/data
+
 # Clear any stale lockfiles from previous restarts
 rm -f /app/data/sellbird.pid /app/data/sellbird.lock
 
