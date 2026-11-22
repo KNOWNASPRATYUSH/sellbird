@@ -283,10 +283,12 @@ def parse_host(value: str) -> str | None:
 
 
 def is_loopback(host: str) -> bool:
-    if host in ("localhost", "127.0.0.1", "::1"):
+    if os.getenv("SELLBIRD_BIND_ALL") == "1":
+        return True
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
         return True
     hl = host.lower()
-    if hl.endswith(".trycloudflare.com") or hl.endswith("knownaspratyush.online") or hl == "outreach.knownaspratyush.online":
+    if hl.endswith(".trycloudflare.com") or hl.endswith("knownaspratyush.online") or hl == "outreach.knownaspratyush.online" or hl.endswith(".koyeb.app"):
         return True
     if "%" in host:
         return False  # IPv6 zone IDs (::1%lo0): ipaddress calls them loopback

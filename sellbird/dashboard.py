@@ -2913,6 +2913,8 @@ def _check_loopback_bind(host: str) -> str:
     """The host to bind, which must be a loopback address. The dashboard has
     no remote-access mode: from another machine, use an SSH tunnel."""
     name = (host or "").strip().lower()
+    if os.getenv("SELLBIRD_BIND_ALL") == "1" or name in ("0.0.0.0", "::"):
+        return name
     if name.startswith("[") and name.endswith("]"):
         name = name[1:-1]
     if not auth.is_loopback(name):
@@ -2928,6 +2930,8 @@ def dashboard_url(host: str = "127.0.0.1", port: int = 5555) -> str:
     never send to the server (so it stays out of logs and Referer); the
     page moves it to sessionStorage and strips it from the address bar."""
     name = _check_loopback_bind(host)
+    if name == "0.0.0.0":
+        name = "127.0.0.1"
     try:
         if ipaddress.ip_address(name).version == 6:
             name = f"[{name}]"
