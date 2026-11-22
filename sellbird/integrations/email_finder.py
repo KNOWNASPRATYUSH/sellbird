@@ -745,7 +745,7 @@ async def verify_published_address(email: str, env=None) -> str:
     if not mx_host:
         return "invalid"
     status, _ = await _verify_candidate(email, classify_mx(mx_host), env)
-    return status or "risky"
+    return status or "guess"
 
 
 def _belongs_to_someone_else(candidate, pattern, person, domain, other_people, known_emails) -> bool:

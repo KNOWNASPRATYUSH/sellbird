@@ -97,12 +97,17 @@ async def run_prospecting(
     queries the database for what needs attention, so it also sweeps up
     anything an earlier run left unfinished.
     """
+    from sellbird.config import load_env
     from sellbird.collectors.discover import DEFAULT_PROVIDER, run_discovery
 
     report = PipelineReport()
 
+    active_provider = provider or DEFAULT_PROVIDER
+    if not provider and active_provider == "tinyfish" and not load_env().tinyfish_api_key:
+        active_provider = "osm"
+
     discovery = await run_discovery(
-        state, config, provider or DEFAULT_PROVIDER, queries,
+        state, config, active_provider, queries,
         max_spend=max_spend, dry_run=dry_run,
     )
     report.discover = discovery.as_dict()

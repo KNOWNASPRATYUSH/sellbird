@@ -1773,6 +1773,8 @@ Respond ONLY with the JSON array."""
         except Exception as e:
             logger.debug(f"Inbox verification failed for {email}: {e}")
             status = "guess"
+        if status == "guess" and getattr(self.config.channels.email, "send_to_risky", False):
+            status = "risky"
         prospect = Prospect(
             email=email,
             email_status=status,
