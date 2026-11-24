@@ -1335,6 +1335,7 @@ class ProfileCollector:
         Flush-per-item is deliberate: the observations are the asset, and a
         long run that dies must not take them with it.
         """
+        self.total = 0
         total = 0
         for company in companies:
             domain = (company.get("domain") or "").strip()
@@ -1352,7 +1353,9 @@ class ProfileCollector:
             await self._mark_checked(company["id"])
             await self._improve_name(company, domain)
             if obs:
-                total += await self.state.add_observations(obs, run_id=run_id)
+                added = await self.state.add_observations(obs, run_id=run_id)
+                total += added
+                self.total = total
                 logger.info(f"profile: {domain} → {len(obs)} observation(s)")
             await asyncio.sleep(random.uniform(0.4, 1.2))
         return total
@@ -1375,13 +1378,26 @@ async def profile_companies(state, companies: list[dict], config=None) -> tuple[
         )
         return 0, ""
     run_id = await state.start_run("profile", provider="http")
+    collector = None
     try:
         keywords = role_keywords(getattr(config, "icp", None))
         async with ProfileCollector(state, confirmed, role_keywords=keywords) as collector:
             n = await collector.run(companies, run_id=run_id)
         await state.finish_run(run_id, records=n, cost_usd=0.0)
         return n, run_id
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        logger.info("profile run cancelled or interrupted")
+        records = getattr(collector, "total", 0) if collector else 0
+        try:
+            await state.finish_run(run_id, status="stopped", records=records, cost_usd=0.0, error="interrupted or cancelled")
+        except Exception:
+            pass
+        raise
     except Exception as e:
-        await state.finish_run(run_id, status="failed", error=str(e))
+        records = getattr(collector, "total", 0) if collector else 0
+        try:
+            await state.finish_run(run_id, status="failed", records=records, cost_usd=0.0, error=str(e))
+        except Exception:
+            pass
         raise
 

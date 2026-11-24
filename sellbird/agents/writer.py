@@ -906,6 +906,12 @@ Return ONLY a JSON object: {{"subject": "...", "body": "..."}}"""
         for prospect in prospects:
             # Group by industry + rough title category
             industry = prospect.industry or "general"
+            # Strip search operator syntax (-site:..., site:...) if industry was set from search query
+            clean_industry = re.sub(r"-?site:[^\s]+", "", industry, flags=re.I).strip()
+            clean_industry = re.sub(r"\s+", " ", clean_industry)
+            if len(clean_industry) > 40:
+                clean_industry = clean_industry[:40].strip()
+            industry = clean_industry or "general"
             # Inbox prospects get their own campaign: their templates can't
             # greet anyone by name.
             kind = "inbox-outreach" if prospect.is_company_inbox else "outreach"

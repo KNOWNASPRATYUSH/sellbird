@@ -131,6 +131,7 @@ const STATUS = {
   running:        ['Running', 'active'],
   stale:          ['Stale', 'bad'],
   stalled:        ['Stopped', 'bad'],
+  stopped:        ['Stopped', 'idle'],
 };
 
 function statusMeta(status) {
@@ -247,11 +248,25 @@ function sourceLabel(s) {
 
 const AGENT_ICONS = {scout: 'discover', writer: 'pen', sender: 'campaigns', handler: 'message',
                      analyst: 'usage', user: 'contacts', main: 'refresh'};
+// Strip raw Google dork operators and clean up campaign titles for the UI
+function cleanCampaignName(raw) {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  // Strip Google search operators (-site:greenhouse.io, site:...)
+  s = s.replace(/-?site:[^\s]+/gi, '').replace(/\s+/g, ' ').trim();
+  // Format trailing -outreach / -inbox-outreach cleanly
+  s = s.replace(/\s*-\s*(inbox-outreach|outreach)$/i, ' ($1)');
+  if (s.length > 55) {
+    s = s.slice(0, 52).trim() + '…';
+  }
+  return s;
+}
+
 // One plain sentence per logged action, from the details each agent records.
 function actionText(a) {
   const d = a.details || {};
   const who = escHtml(d.prospect_email || d.prospect || d.to || '');
-  const camp = escHtml(d.campaign_name || d.campaign || '');
+  const camp = escHtml(cleanCampaignName(d.campaign_name || d.campaign || ''));
   const intent = d.intent ? ' · ' + escHtml(String(d.intent).replace(/_/g, ' ')) : '';
   const n = (v, one, many) => (Number(v) || 0) + ' ' + ((Number(v) || 0) === 1 ? one : many);
   switch (a.action_type) {
@@ -2721,7 +2736,7 @@ async function loadCampaigns() {
     });
     const pc = (c.prospect_ids || []).length;
     html += '<div class="campaign-card"><div class="campaign-top">' +
-      '<div class="campaign-title"><h3>' + escHtml(c.name || 'Untitled Campaign') + '</h3>' +
+      '<div class="campaign-title"><h3>' + escHtml(cleanCampaignName(c.name || 'Untitled Campaign')) + '</h3>' +
         '<button class="btn btn-ghost btn-sm" onclick="fbCampaign(' + i + ')">Feedback</button></div>' +
       '<div class="meta">' + badge(c.status) + '<span>' + pc + ' prospect' + (pc !== 1 ? 's' : '') + '</span>' +
         '<span>' + (c.sequence || []).length + ' emails</span><span>Created ' + relTime(c.created_at) + '</span></div>' +

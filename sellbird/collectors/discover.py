@@ -1995,6 +1995,15 @@ async def run_discovery(
         await state.finish_run(report.run_id, status="completed",
                                records=report.new_companies + report.known_companies,
                                cost_usd=report.actual_cost)
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        logger.info("discover run cancelled or interrupted")
+        try:
+            await state.finish_run(report.run_id, status="stopped",
+                                   records=report.new_companies + report.known_companies,
+                                   cost_usd=report.actual_cost, error="interrupted or cancelled")
+        except Exception:
+            pass
+        raise
     except Exception as e:
         logger.exception("discover run failed")
         report.errors.append(str(e))
