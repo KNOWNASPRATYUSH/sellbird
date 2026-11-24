@@ -2296,6 +2296,11 @@ class StateManager:
     async def sweep_stale_runs(self, older_than_hours: int = 6) -> int:
         """A killed collector can't close its own run — never trust it to."""
         async with self._connect() as db:
+            # Purge abandoned 0-record runs so they do not pollute the collector runs history
+            await db.execute(
+                "DELETE FROM runs WHERE status IN ('stale', 'running', 'stopped') AND records = 0 "
+                "AND started_at < datetime('now', '-1 hours')"
+            )
             cursor = await db.execute(
                 "UPDATE runs SET status = 'stale', ended_at = CURRENT_TIMESTAMP "
                 "WHERE status = 'running' "

@@ -685,8 +685,15 @@ async function loadRuns() {
   const el = document.getElementById('today-runs');
   const block = document.getElementById('today-runs-block');
   if (!el) return;
-  const runs = await api('/api/runs');
-  if (!Array.isArray(runs) || !runs.length) {
+  const rawRuns = await api('/api/runs');
+  if (!Array.isArray(rawRuns) || !rawRuns.length) {
+    if (block) block.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  // Exclude 0-record stale/stopped runs so only productive runs are displayed
+  const runs = rawRuns.filter(r => !( (r.status === 'stale' || r.status === 'stopped') && (r.records || 0) === 0 ));
+  if (!runs.length) {
     if (block) block.style.display = 'none';
     el.innerHTML = '';
     return;

@@ -2978,6 +2978,8 @@ async def get_runs_api():
         await state.init_db()
         await state.sweep_stale_runs()
         runs = await state.get_runs(limit=25)
+        # Filter out 0-record stale/abandoned runs so they don't clutter the collector runs card
+        runs = [r for r in runs if not (r.get("status") in ("stale", "stopped") and (r.get("records") or 0) == 0)]
         # Same rule as the live panel: a "running" run that has recorded
         # nothing for STALE_RUN_SECONDS has stopped, whatever its row says.
         now = datetime.now(timezone.utc).replace(tzinfo=None)
